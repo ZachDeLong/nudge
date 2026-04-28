@@ -1,0 +1,13 @@
+_Build artifacts_
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Brainstorm sessions
+.superpowers/
+

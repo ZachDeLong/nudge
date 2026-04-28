@@ -1,0 +1,86 @@
+<h2>Popover anatomy & menu bar states</h2>
+<p class="subtitle">Native macOS aesthetic, ~400×260 popover anchored under the menu bar icon</p>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
+
+  <div>
+    <div class="label" style="margin-bottom: 8px;">Menu bar icon — idle</div>
+    <div style="background: linear-gradient(180deg, #f5f5f7 0%, #e8e8ea 100%); padding: 12px 18px; border-radius: 8px; display: flex; align-items: center; justify-content: flex-end; gap: 18px; font-family: -apple-system, sans-serif; font-size: 13px; color: #1d1d1f; box-shadow: 0 1px 0 rgba(0,0,0,0.05);">
+      <span style="opacity: 0.6;">🔋 100%</span>
+      <span style="opacity: 0.6;">📶</span>
+      <span style="font-family: 'SF Pro Display', sans-serif; font-weight: 500;">●</span>
+      <span style="opacity: 0.6;">9:41 AM</span>
+    </div>
+    <p style="font-size: 12px; color: #666; margin-top: 6px;">Subtle filled circle. Doesn't draw attention.</p>
+  </div>
+
+  <div>
+    <div class="label" style="margin-bottom: 8px;">Menu bar icon — pending</div>
+    <div style="background: linear-gradient(180deg, #f5f5f7 0%, #e8e8ea 100%); padding: 12px 18px; border-radius: 8px; display: flex; align-items: center; justify-content: flex-end; gap: 18px; font-family: -apple-system, sans-serif; font-size: 13px; color: #1d1d1f; box-shadow: 0 1px 0 rgba(0,0,0,0.05);">
+      <span style="opacity: 0.6;">🔋 100%</span>
+      <span style="opacity: 0.6;">📶</span>
+      <span style="position: relative;">
+        <span style="font-family: 'SF Pro Display', sans-serif; font-weight: 500; color: #ff3b30;">●</span>
+        <span style="position: absolute; inset: -3px; border-radius: 50%; box-shadow: 0 0 8px rgba(255, 59, 48, 0.6); animation: pulse 1.5s ease-in-out infinite;"></span>
+      </span>
+      <span style="opacity: 0.6;">9:41 AM</span>
+    </div>
+    <p style="font-size: 12px; color: #666; margin-top: 6px;">Red, pulsing softly. Glows.</p>
+  </div>
+
+</div>
+
+<style>
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.15); }
+}
+</style>
+
+<div style="margin-top: 32px;">
+  <div class="label" style="margin-bottom: 8px;">Popover (auto-opens under icon)</div>
+
+  <div style="position: relative; padding-top: 12px;">
+    <div style="position: absolute; top: 0; right: 80px; width: 12px; height: 12px; background: rgba(245, 245, 247, 0.92); transform: rotate(45deg); border-top: 0.5px solid rgba(0,0,0,0.08); border-left: 0.5px solid rgba(0,0,0,0.08);"></div>
+
+    <div style="background: rgba(245, 245, 247, 0.92); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 0.5px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 16px; width: 380px; margin-left: auto; margin-right: 80px; font-family: -apple-system, 'SF Pro Text', sans-serif; box-shadow: 0 10px 40px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.08);">
+
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+        <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #ff6b35 0%, #cf532b 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 14px;">✦</div>
+        <div>
+          <div style="font-size: 13px; font-weight: 600; color: #1d1d1f; line-height: 1.2;">Permission request</div>
+          <div style="font-size: 11px; color: #86868b; line-height: 1.2; margin-top: 1px;">Bash · counselor-sophie</div>
+        </div>
+        <div style="margin-left: auto; font-size: 11px; color: #86868b;">just now</div>
+      </div>
+
+      <div style="background: rgba(0,0,0,0.04); border-radius: 8px; padding: 10px 12px; font-family: 'SF Mono', Menlo, monospace; font-size: 12px; color: #1d1d1f; line-height: 1.5; word-break: break-all; margin-bottom: 14px;">
+        git push origin main
+      </div>
+
+      <div style="display: flex; gap: 8px;">
+        <button style="flex: 1; background: #007aff; color: white; border: none; padding: 9px 16px; border-radius: 8px; font-family: inherit; font-weight: 500; font-size: 13px; cursor: pointer;">Allow ⏎</button>
+        <button style="flex: 1; background: rgba(0,0,0,0.06); color: #1d1d1f; border: none; padding: 9px 16px; border-radius: 8px; font-family: inherit; font-size: 13px; cursor: pointer;">Deny ⎋</button>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #666; margin-top: 16px;">
+    Vibrancy/blur background, system fonts, native button styling. Enter approves, Escape denies — works whether or not the popover has focus.
+  </p>
+</div>
+
+<div style="margin-top: 24px;">
+  <div class="label" style="margin-bottom: 8px;">When 2+ prompts queued</div>
+  <div style="background: rgba(245, 245, 247, 0.92); backdrop-filter: blur(20px); border: 0.5px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 16px; width: 380px; font-family: -apple-system, sans-serif; box-shadow: 0 10px 40px rgba(0,0,0,0.18);">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+      <div style="font-size: 13px; font-weight: 600; color: #1d1d1f;">Permission request</div>
+      <div style="font-size: 11px; color: #ff9500; background: rgba(255, 149, 0, 0.12); padding: 2px 7px; border-radius: 10px; font-weight: 500;">2 more queued</div>
+    </div>
+    <div style="background: rgba(0,0,0,0.04); border-radius: 8px; padding: 10px 12px; font-family: 'SF Mono', Menlo, monospace; font-size: 12px; color: #1d1d1f; margin-bottom: 12px;">npm run deploy</div>
+    <div style="display: flex; gap: 8px;">
+      <button style="flex: 1; background: #007aff; color: white; border: none; padding: 9px; border-radius: 8px; font-weight: 500; font-size: 13px;">Allow</button>
+      <button style="flex: 1; background: rgba(0,0,0,0.06); color: #1d1d1f; border: none; padding: 9px; border-radius: 8px; font-size: 13px;">Deny</button>
+    </div>
+  </div>
+</div>
