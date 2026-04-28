@@ -165,6 +165,29 @@ Running an unsigned `Nudge.app` from `/Applications` triggers Gatekeeper. v1 doc
 
 If port 19283 is taken, the server picks a random free port and writes it to `~/.config/nudge/port`. The hook always reads the file rather than hardcoding the port.
 
+## v2 ideas (out of scope for v1, captured here so we don't lose them)
+
+### Text reply dropdown for Claude's elicitations
+
+When Claude asks the user a question that needs a text response (not a permission prompt — an actual "what should I name this?" or "which option do you want?" question), surface it in the same popover with a text field instead of Allow/Deny buttons.
+
+**Technical wrinkle:** text questions don't go through the permission system. They surface via the `Notification` hook with messages like "Claude is waiting for your input," but that hook is fire-and-forget — Claude isn't actually blocked waiting for a hook response, it's blocked waiting for the user to type into the terminal.
+
+**Possible mechanisms:**
+
+- **MCP server with an `ask_user` tool** — Claude calls the tool when it wants text input; the tool blocks until Nudge resolves. Requires Claude to actually call the tool rather than typing into the terminal, which is a behavioral change.
+- **`Elicitation` hook event** — the hooks schema lists `Elicitation` and `ElicitationResult` events. If they support blocking and decision return, this is the natural fit. Needs investigation.
+- **Terminal output scraping** — fragile and gross, but technically possible. Last resort.
+
+Worth a separate brainstorm + spec once Nudge v1 is shipped and stable.
+
+### Other v2 candidates
+
+- **Notification history** — small list of past prompts in the popover, so the user can review what they approved/denied recently.
+- **Per-pattern preferences** — "always allow for this command" learned from clicks.
+- **Cross-machine sync** — approve from a different machine via Tailscale/iCloud.
+- **Touch Bar / Stream Deck integration** — physical hardware to approve.
+
 ## Project layout
 
 ```
