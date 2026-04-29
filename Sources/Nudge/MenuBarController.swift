@@ -38,21 +38,38 @@ final class MenuBarController: NSObject {
     private func refreshIcon() {
         guard let button = statusItem.button else { return }
         let symbol: String
-        let tint: NSColor?
+        let color: NSColor?  // nil = adaptive (template), non-nil = baked color
         if !settings.enabled {
-            symbol = "moon.zzz"
-            tint = NSColor.tertiaryLabelColor
+            symbol = "hand.tap"
+            color = NSColor.tertiaryLabelColor
         } else if currentPrompt != nil {
-            symbol = "circle.fill"
-            tint = NSColor.systemRed
+            symbol = "hand.tap.fill"
+            color = NSColor.systemRed
         } else {
-            symbol = "circle.fill"
-            tint = nil
+            symbol = "hand.tap"
+            color = nil
         }
-        let img = NSImage(systemSymbolName: symbol, accessibilityDescription: "Nudge")
-        img?.isTemplate = (tint == nil && currentPrompt == nil) || !settings.enabled
-        button.image = img
-        button.contentTintColor = tint
+
+        guard let baseImg = NSImage(systemSymbolName: symbol, accessibilityDescription: "Nudge") else {
+            button.image = nil
+            return
+        }
+
+        if let color = color {
+            // Bake the color into the SF Symbol via hierarchicalColor. Status
+            // bar buttons sometimes ignore `contentTintColor`, so applying the
+            // color as a SymbolConfiguration is more reliable.
+            let config = NSImage.SymbolConfiguration(hierarchicalColor: color)
+            let tinted = baseImg.withSymbolConfiguration(config) ?? baseImg
+            tinted.isTemplate = false
+            button.image = tinted
+            button.contentTintColor = nil
+        } else {
+            // Adaptive: let the menu bar tint based on appearance.
+            baseImg.isTemplate = true
+            button.image = baseImg
+            button.contentTintColor = nil
+        }
     }
 
     @objc private func handleClick(_ sender: AnyObject?) {
@@ -168,14 +185,21 @@ final class MenuBarController: NSObject {
             anchorTo: statusItem.button,
             makeKey: isAsk
         )
-        // Click-outside dismiss applies to every visible state of the panel,
-        // including the idle "Nudge is ready" view. The handler decides whether
-        // to deny (live prompt) or just hide (idle).
+        // Click-outside dismiss applies to every visible state of the panel.
         startClickMonitor()
+        // Pulse the menu bar icon only while the popover is open with an
+        // active permission prompt. Once dismissed, the icon stays red and
+        // steady (refreshIcon) so it's still a clear "pending" indicator.
+        if currentPrompt?.resolvedKind == .permission {
+            startPulse()
+        } else {
+            stopPulse()
+        }
     }
 
     private func dismissPanel() {
         stopClickMonitor()
+        stopPulse()
         panel.hide()
     }
 
@@ -201,7 +225,6 @@ final class MenuBarController: NSObject {
         refreshIcon()
 
         if let prompt = prompt {
-            startPulse()
             // Global Enter/Esc shortcuts only make sense for permission
             // prompts. For asks, the popover is key (TextEditor receives
             // keystrokes) and dismissal is via the in-popover buttons.
@@ -210,9 +233,10 @@ final class MenuBarController: NSObject {
             } else {
                 stopKeyMonitor()
             }
+            // Pulse is now driven by popover visibility, not prompt presence
+            // — see renderAndShow / dismissPanel.
             renderAndShow()
         } else {
-            stopPulse()
             stopKeyMonitor()
             dismissPanel()
         }
@@ -303,12 +327,10 @@ final class MenuBarController: NSObject {
                   !buttonScreenFrame.contains(mouseLocation) else { return }
 
             DispatchQueue.main.async {
-                guard let prompt = self.currentPrompt else {
-                    self.dismissPanel()
-                    return
-                }
-                // Permission prompts deny on click-outside; asks just cancel.
-                self.resolve(prompt.resolvedKind == .ask ? .cancel : .deny)
+                // Click-outside hides the popover but does NOT resolve any
+                // active prompt — user can come back to it via the icon.
+                // Only explicit Deny / Cancel actions (or Esc) resolve.
+                self.dismissPanel()
             }
         }
     }
@@ -320,12 +342,14 @@ final class MenuBarController: NSObject {
 
 // MARK: - PromptPanel
 
-/// NSPanel subclass that allows becoming key window even when borderless.
-/// Required for the ask popover so the TextEditor receives keystrokes.
-/// We still gate this behind `panel.makeKey()` calls — permission popovers
-/// don't call makeKey, so they don't grab focus.
+/// NSPanel subclass that conditionally allows becoming key window. We flip
+/// the flag on for ask popovers (TextField needs keystrokes) and off for
+/// permission popovers (otherwise interacting with the SwiftUI Menu lets
+/// the panel grab focus, which paints the Allow button blue and leaves it
+/// stuck in the keyed look).
 private final class KeyablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    var allowsKey: Bool = false
+    override var canBecomeKey: Bool { allowsKey }
     override var canBecomeMain: Bool { false }
 }
 
@@ -391,12 +415,15 @@ final class PromptPanel {
         startOrigin.y += 12
         panel.alphaValue = 0
         panel.setFrameOrigin(startOrigin)
+        // Gate key-window eligibility BEFORE ordering front. Permission
+        // popovers stay non-keyable so SwiftUI Menu interactions can't
+        // trigger a focus grab (which left Allow stuck in its blue
+        // "default action keyed" appearance after the menu closed).
+        if let keyable = panel as? KeyablePanel {
+            keyable.allowsKey = makeKey
+        }
         panel.orderFrontRegardless()
         if makeKey {
-            // Ask popovers need key-window status so the TextEditor receives
-            // keystrokes. Permission popovers stay non-key (user keeps focus
-            // in the terminal). `.nonactivatingPanel` lets us take key without
-            // switching app activation.
             panel.makeKey()
         }
 

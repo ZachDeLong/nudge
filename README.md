@@ -2,6 +2,8 @@
 
 A macOS menu bar app for Claude Code permission prompts. When Claude wants to run something risky like `git push --force`, Nudge pops a small panel out of the menu bar instead of asking back in the terminal. Click Allow from wherever you are.
 
+![Permission popover](./docs/img/permission.png)
+
 It also ships with `nudge-ask`, a small CLI Claude can call when it needs a free-form text answer from you. Same popover style, with a text field instead of Allow/Deny.
 
 ## Why I built it
@@ -12,13 +14,13 @@ It's opt-in, not a security blanket. You list patterns in `~/.config/nudge/patte
 
 ## Install
 
-One line:
+**One-line installer (builds from source):**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ZachDeLong/nudge/main/install.sh | bash
 ```
 
-Or manually:
+**Manual source build:**
 
 ```sh
 git clone https://github.com/ZachDeLong/nudge.git
@@ -26,9 +28,27 @@ cd nudge
 make install
 ```
 
-Either way builds the app, copies it to `/Applications/Nudge.app`, seeds default patterns, wires a `PreToolUse` hook into `~/.claude/settings.json`, and launches Nudge in the background.
+Either of those builds the app, copies it to `/Applications/Nudge.app`, seeds default patterns, wires a `PreToolUse` hook into `~/.claude/settings.json`, and launches Nudge in the background.
 
-Requirements: macOS 14+ and Xcode Command Line Tools. No full Xcode needed.
+**Pre-built bundle (no build step):**
+
+Grab `Nudge.app.zip` from the [latest release](https://github.com/ZachDeLong/nudge/releases/latest). Unzip and drop `Nudge.app` into `/Applications`. Since the build is unsigned, run this once after copying:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Nudge.app
+```
+
+Then clone the repo to wire the hook into Claude Code (you only need the scripts):
+
+```sh
+git clone https://github.com/ZachDeLong/nudge.git
+cd nudge
+./scripts/install-hook.sh   # writes the PreToolUse entry into settings.json
+./scripts/seed-patterns.sh  # creates ~/.config/nudge/patterns.txt with defaults
+open -ga Nudge
+```
+
+Requirements: macOS 14+. Source builds also need Xcode Command Line Tools (no full Xcode required).
 
 ## How it works
 
@@ -69,9 +89,27 @@ Each popover has a `⋯` button next to Allow with two options:
 
 The menu only shows up when the matched pattern can be promoted to a valid Claude rule. Infix patterns like `Bash(*--force*)` aren't promotable, so on those you only see Allow / Deny. If a command matches both an infix and a prefix pattern, the infix wins on safety: promoting `git push:*` would also auto-allow `git push --force` next time, which is the bad path.
 
+## Settings
+
+Click the menu bar icon when there's no prompt up. The idle popover doubles as a settings panel:
+
+![Settings popover](./docs/img/settings.png)
+
+
+- **Pause Nudge / Resume Nudge.** Master switch. Paused = the hook exits silently and Claude falls back to its native terminal prompt. The status pill and icon both reflect the current state.
+- **Skip when terminal is focused** (on by default). When the frontmost app is a known terminal or IDE (Ghostty, iTerm2, Terminal.app, Warp, wezterm, Hyper, VS Code, Cursor), the hook skips the popover. You're already there; Claude's native prompt is fine.
+- **Quit Nudge.** Exits the menu bar app entirely. The hook auto-launches it again on the next call.
+
+Right-clicking the icon opens the same toggles as a context menu, in case that's the gesture you reach for.
+
+Settings persist in `~/.config/nudge/prefs.json` and are re-read on every hook call, so toggles take effect immediately.
+
 ## nudge-ask
 
 A CLI Claude can call when it needs a free-form text answer.
+
+![Ask popover](./docs/img/ask.png)
+
 
 ```sh
 /Applications/Nudge.app/Contents/MacOS/nudge-ask "Which deployment target?"
