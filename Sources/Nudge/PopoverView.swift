@@ -45,8 +45,25 @@ struct PopoverView: View {
         }
         .padding(.bottom, 12)
 
-        commandBox(for: prompt.command)
+        let trimmed = prompt.command.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasCommand = !trimmed.isEmpty
+
+        if hasCommand {
+            commandBox(for: prompt.command)
+                .padding(.bottom, 12)
+        } else {
+            // Non-Bash tool (Edit, Write, Read, MCP, etc.) — no command field.
+            // Show a meaningful placeholder instead of an empty box.
+            HStack(spacing: 8) {
+                Image(systemName: "questionmark.circle")
+                    .foregroundColor(.secondary)
+                Text("\(prompt.tool) operation in \(URL(fileURLWithPath: prompt.cwd).lastPathComponent)")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
             .padding(.bottom, 12)
+        }
 
         HStack(spacing: 8) {
             Button(action: onDeny) { Text("Deny").frame(maxWidth: .infinity) }
@@ -60,28 +77,24 @@ struct PopoverView: View {
                 .keyboardShortcut(.defaultAction)
         }
 
-        HStack(spacing: 0) {
-            Button(action: onAlwaysAllow) {
-                Text("Always allow")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+        if hasCommand {
+            HStack(spacing: 6) {
+                Button(action: onSessionAllow) {
+                    Text("Allow this session")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button(action: onAlwaysAllow) {
+                    Text("Always allow")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .buttonStyle(.plain)
-
-            Text(" · ")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-
-            Button(action: onSessionAllow) {
-                Text("Allow this session")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
+            .padding(.top, 8)
         }
-        .padding(.top, 10)
     }
 
     /// Renders the command with destructive tokens highlighted in red.
