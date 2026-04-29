@@ -26,10 +26,21 @@ enum PersistentAllowList {
         case malformedJSON
     }
 
-    /// Adds `Bash(<exact command>)` to permissions.allow. Returns true if added,
-    /// false if already present.
+    enum WriteResult {
+        case added
+        case alreadyPresent
+        case skippedEmpty
+    }
+
+    /// Adds `Bash(<exact command>)` to permissions.allow.
+    /// Returns `.skippedEmpty` if the command is empty/whitespace (would create an invalid rule).
     @discardableResult
-    static func add(command: String) throws -> Bool {
+    static func add(command: String) throws -> WriteResult {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .skippedEmpty
+        }
+
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")
         guard let data = try? Data(contentsOf: url) else {
@@ -42,9 +53,9 @@ enum PersistentAllowList {
         var permissions = root["permissions"] as? [String: Any] ?? [:]
         var allow = permissions["allow"] as? [String] ?? []
 
-        let rule = "Bash(\(command))"
+        let rule = "Bash(\(trimmed))"
         if allow.contains(rule) {
-            return false
+            return .alreadyPresent
         }
         allow.append(rule)
         permissions["allow"] = allow
@@ -52,6 +63,6 @@ enum PersistentAllowList {
 
         let out = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
         try out.write(to: url, options: .atomic)
-        return true
+        return .added
     }
 }

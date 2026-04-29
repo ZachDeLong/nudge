@@ -46,7 +46,7 @@ struct PopoverView: View {
         .padding(.bottom, 12)
 
         commandBox(for: prompt.command)
-            .padding(.bottom, 14)
+            .padding(.bottom, 12)
 
         HStack(spacing: 8) {
             Button(action: onDeny) { Text("Deny").frame(maxWidth: .infinity) }
@@ -54,20 +54,34 @@ struct PopoverView: View {
                 .controlSize(.large)
                 .keyboardShortcut(.cancelAction)
 
-            Menu {
-                Button("Always allow this command", action: onAlwaysAllow)
-                Button("Allow for this session", action: onSessionAllow)
-            } label: {
-                Text("Allow")
-                    .frame(maxWidth: .infinity)
-            } primaryAction: {
-                onAllow()
-            }
-            .menuStyle(.borderlessButton)
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
+            Button(action: onAllow) { Text("Allow").frame(maxWidth: .infinity) }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
         }
+
+        HStack(spacing: 0) {
+            Button(action: onAlwaysAllow) {
+                Text("Always allow")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Text(" · ")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            Button(action: onSessionAllow) {
+                Text("Allow this session")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+        }
+        .padding(.top, 10)
     }
 
     /// Renders the command with destructive tokens highlighted in red.
