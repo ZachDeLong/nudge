@@ -1,4 +1,4 @@
-.PHONY: build clean run install uninstall sync-patterns import-permissions
+.PHONY: build clean run install uninstall sync-patterns import-permissions test-popup
 
 CONFIG ?= release
 BUILD_DIR := .build/$(CONFIG)
@@ -32,9 +32,10 @@ install: build
 	./scripts/seed-patterns.sh
 	@echo "→ Wiring hooks into Claude Code…"
 	./scripts/install-hook.sh
+	@echo "→ Launching Nudge…"
+	open -ga Nudge
 	@echo ""
-	@echo "✓ Nudge installed."
-	@echo "  Launch: open -ga Nudge"
+	@echo "✓ Nudge installed and running."
 	@echo "  Patterns: $(PATTERNS_FILE)"
 	@echo "  Re-sync after editing: make sync-patterns"
 
@@ -48,6 +49,14 @@ sync-patterns:
 import-permissions:
 	./scripts/seed-patterns.sh --merge
 	@echo "✓ Patterns merged. Active list: $(PATTERNS_FILE)"
+
+# Fires a test prompt directly at Nudge's HTTP server (bypasses Claude Code).
+# Usage: make test-popup            (default: git push --force, default mode)
+#        make test-popup CMD="rm -rf /tmp/foo"
+#        make test-popup CMD="" TOOL=Edit
+#        make test-popup MODE=auto       (auto mode → no Always button)
+test-popup:
+	./scripts/test-popup.sh "$(CMD)" "$(TOOL)" "$(MODE)"
 
 uninstall:
 	-pkill -x Nudge 2>/dev/null || true

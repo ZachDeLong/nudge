@@ -17,29 +17,29 @@ struct PopoverView: View {
                 idle()
             }
         }
-        .frame(width: 380)
         .padding(16)
+        .frame(width: 380)
         .background(VisualEffectBackground())
     }
 
     @ViewBuilder
     private func content(for prompt: Prompt) -> some View {
-        HStack(spacing: 10) {
-            ClaudeBadge()
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: 11) {
+            ToolBadge(tool: prompt.tool)
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Permission request")
                     .font(.system(size: 13, weight: .semibold))
                 Text("\(prompt.tool) · \(URL(fileURLWithPath: prompt.cwd).lastPathComponent)")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
-            Spacer()
+            Spacer(minLength: 8)
             if queueDepth > 1 {
-                Text("\(queueDepth - 1) more queued")
-                    .font(.system(size: 11, weight: .medium))
+                Text("\(queueDepth - 1) queued")
+                    .font(.system(size: 10, weight: .medium))
                     .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.12))
-                    .foregroundColor(.orange)
+                    .background(Color.primary.opacity(0.08))
+                    .foregroundColor(.secondary)
                     .clipShape(Capsule())
             }
         }
@@ -52,8 +52,6 @@ struct PopoverView: View {
             commandBox(for: prompt.command)
                 .padding(.bottom, 12)
         } else {
-            // Non-Bash tool (Edit, Write, Read, MCP, etc.) — no command field.
-            // Show a meaningful placeholder instead of an empty box.
             HStack(spacing: 8) {
                 Image(systemName: "questionmark.circle")
                     .foregroundColor(.secondary)
@@ -65,39 +63,62 @@ struct PopoverView: View {
             .padding(.bottom, 12)
         }
 
-        HStack(spacing: 8) {
-            Button(action: onDeny) { Text("Deny").frame(maxWidth: .infinity) }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .keyboardShortcut(.cancelAction)
+        // Show the always/session menu whenever there's a real command to act
+        // on. We can't reliably mirror Claude's "always allow" availability
+        // (it depends on Claude's internal pattern classifier), so the
+        // semantics here are simply "stop having Nudge prompt about this".
+        let offerAlways = hasCommand
 
-            Button(action: onAllow) { Text("Allow").frame(maxWidth: .infinity) }
+        HStack(spacing: 8) {
+            Button(action: onDeny) {
+                Text("Deny")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .keyboardShortcut(.cancelAction)
+
+            if offerAlways {
+                Menu {
+                    Button("Allow for this session", action: onSessionAllow)
+                    Button("Always allow this command", action: onAlwaysAllow)
+                } label: {
+                    Text("Allow")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                } primaryAction: {
+                    onAllow()
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.visible)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
-                .contextMenu {
-                    if hasCommand {
-                        Button("Always allow this command", action: onAlwaysAllow)
-                        Button("Allow for this session", action: onSessionAllow)
-                    }
+            } else {
+                Button(action: onAllow) {
+                    Text("Allow")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
+            }
         }
     }
 
-    /// Renders the command with destructive tokens highlighted in red.
     @ViewBuilder
     private func commandBox(for command: String) -> some View {
         Text(highlight(command: command))
             .font(.system(size: 12, design: .monospaced))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(Color.black.opacity(0.04))
+            .background(Color.primary.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .textSelection(.enabled)
     }
 
-    /// Token-by-token highlighter. Marks --force, --hard, -rf etc. as destructive,
-    /// and main/master branches when the command is a push.
     private func highlight(command: String) -> AttributedString {
         var result = AttributedString()
         let tokens = command.split(separator: " ", omittingEmptySubsequences: false)
@@ -145,14 +166,32 @@ struct PopoverView: View {
     }
 }
 
-private struct ClaudeBadge: View {
+private struct ToolBadge: View {
+    let tool: String
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(LinearGradient(colors: [Color(red: 1.0, green: 0.42, blue: 0.21),
-                                         Color(red: 0.81, green: 0.32, blue: 0.17)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(LinearGradient(
+                colors: [Color(red: 1.0, green: 0.42, blue: 0.21),
+                         Color(red: 0.81, green: 0.32, blue: 0.17)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            ))
             .frame(width: 32, height: 32)
-            .overlay(Text("✦").foregroundColor(.white).font(.system(size: 14, weight: .bold)))
+            .overlay(
+                Image(systemName: symbol(for: tool))
+                    .foregroundColor(.white)
+                    .font(.system(size: 14, weight: .semibold))
+            )
+    }
+
+    private func symbol(for tool: String) -> String {
+        switch tool {
+        case "Bash":            return "terminal.fill"
+        case "Edit", "Write":   return "pencil"
+        case "Read":            return "eye.fill"
+        case "Glob", "Grep":    return "magnifyingglass"
+        default:                return "sparkles"
+        }
     }
 }
 

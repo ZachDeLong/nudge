@@ -13,6 +13,7 @@ let toolInput = inputJSON["tool_input"] as? [String: Any] ?? [:]
 let command = toolInput["command"] as? String ?? ""
 let cwd = inputJSON["cwd"] as? String ?? FileManager.default.currentDirectoryPath
 let sessionId = inputJSON["session_id"] as? String ?? "unknown"
+let permissionMode = inputJSON["permission_mode"] as? String ?? "default"
 
 // MARK: - Pattern gate
 //
@@ -64,6 +65,7 @@ let prompt: [String: Any] = [
     "command": command,
     "cwd": cwd,
     "sessionId": sessionId,
+    "permissionMode": permissionMode,
 ]
 guard let body = try? JSONSerialization.data(withJSONObject: prompt) else { exit(0) }
 

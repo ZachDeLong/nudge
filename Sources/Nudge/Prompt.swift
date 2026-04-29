@@ -6,6 +6,11 @@ struct Prompt: Codable, Equatable, Identifiable {
     let command: String
     let cwd: String
     let sessionId: String
+    /// Claude Code's `permission_mode` at the time of the prompt — "default",
+    /// "auto", "plan", etc. We use it to decide whether "Always allow" makes
+    /// sense to offer (in auto mode Claude wouldn't have prompted, so the
+    /// concept of "always" is moot).
+    let permissionMode: String?
 }
 
 enum Decision: String, Codable {

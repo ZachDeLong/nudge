@@ -33,7 +33,7 @@ final class MenuBarController: NSObject {
 
     @objc private func toggleManually(_ sender: AnyObject?) {
         if panel.isVisible {
-            panel.hide()
+            dismissPanel()
         } else {
             renderAndShow()
         }
@@ -51,6 +51,15 @@ final class MenuBarController: NSObject {
             ),
             anchorTo: statusItem.button
         )
+        // Click-outside dismiss applies to every visible state of the panel,
+        // including the idle "Nudge is ready" view. The handler decides whether
+        // to deny (live prompt) or just hide (idle).
+        startClickMonitor()
+    }
+
+    private func dismissPanel() {
+        stopClickMonitor()
+        panel.hide()
     }
 
     private func subscribeToQueue() async {
@@ -79,13 +88,11 @@ final class MenuBarController: NSObject {
         if prompt != nil {
             startPulse()
             startKeyMonitor()
-            startClickMonitor()
             renderAndShow()
         } else {
             stopPulse()
             stopKeyMonitor()
-            stopClickMonitor()
-            panel.hide()
+            dismissPanel()
         }
     }
 
@@ -156,13 +163,19 @@ final class MenuBarController: NSObject {
         stopClickMonitor()
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self = self, self.panel.isVisible else { return }
-            // If the click is outside the panel, deny.
             let panelFrame = self.panel.windowFrame
             let mouseLocation = NSEvent.mouseLocation
-            // Also ignore clicks on the menu bar icon itself.
+            // Ignore clicks on the menu bar icon itself (toggleManually handles those).
             let buttonScreenFrame = self.statusItem.button?.window?.frame ?? .zero
-            if !panelFrame.contains(mouseLocation) && !buttonScreenFrame.contains(mouseLocation) {
-                DispatchQueue.main.async { self.resolve(.deny) }
+            guard !panelFrame.contains(mouseLocation),
+                  !buttonScreenFrame.contains(mouseLocation) else { return }
+
+            DispatchQueue.main.async {
+                if self.currentPrompt != nil {
+                    self.resolve(.deny)
+                } else {
+                    self.dismissPanel()
+                }
             }
         }
     }
@@ -203,11 +216,10 @@ final class PromptPanel {
         panel.isMovable = false
     }
 
-    /// Default panel content size used for positioning math. The actual rendered
-    /// height may be slightly less (idle / no-command states), but using a fixed
-    /// reasonable default avoids the "panel.frame.size = 0x0 on first show"
-    /// problem that put the popover in the wrong place.
-    private static let defaultContentSize = NSSize(width: 380, height: 200)
+    /// Fallback content size if SwiftUI hasn't reported an intrinsic size yet.
+    /// Width matches PopoverView's `.frame(width: 380)`. Height is generous;
+    /// the real height comes from `hosting.view.fittingSize` in show().
+    private static let fallbackContentSize = NSSize(width: 380, height: 200)
 
     func show(content: PopoverView, anchorTo button: NSStatusBarButton?) {
         hosting.rootView = AnyView(
@@ -215,23 +227,34 @@ final class PromptPanel {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         )
 
-        // Force a known content size before positioning so origin math doesn't
-        // divide-by-zero when SwiftUI hasn't laid out yet.
-        panel.setContentSize(Self.defaultContentSize)
+        // Ask SwiftUI for the actual intrinsic size after layout. Using
+        // fittingSize keeps the panel matched to the rendered content (so
+        // centering math is honest) and lets the height adapt to whether a
+        // command box / queue badge is showing.
+        hosting.view.layoutSubtreeIfNeeded()
+        let intrinsic = hosting.view.fittingSize
+        let size = NSSize(
+            width: intrinsic.width  > 1 ? intrinsic.width  : Self.fallbackContentSize.width,
+            height: intrinsic.height > 1 ? intrinsic.height : Self.fallbackContentSize.height
+        )
+        panel.setContentSize(size)
 
         let finalOrigin = computeOrigin(anchorTo: button)
         logPositioning(button: button, finalOrigin: finalOrigin)
 
-        // Slide-in: start 18px above and at 0 alpha, animate to final.
+        // Drop-in: start 12px above the resting position and 0 alpha, then
+        // snap into place with a back-out (light overshoot). Kept short so the
+        // animation stays clear of the menu bar region throughout.
         var startOrigin = finalOrigin
-        startOrigin.y += 18
+        startOrigin.y += 12
         panel.alphaValue = 0
         panel.setFrameOrigin(startOrigin)
         panel.orderFrontRegardless()
 
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.16
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            ctx.duration = 0.26
+            // Ease-out-back: slight overshoot at the end for a "drop" feel.
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.56, 0.64, 1.0)
             panel.animator().alphaValue = 1
             panel.animator().setFrameOrigin(finalOrigin)
         })
@@ -241,9 +264,9 @@ final class PromptPanel {
         guard panel.isVisible else { return }
         let currentOrigin = panel.frame.origin
         var endOrigin = currentOrigin
-        endOrigin.y += 12
+        endOrigin.y += 14
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.12
+            ctx.duration = 0.14
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
             panel.animator().setFrameOrigin(endOrigin)
@@ -276,7 +299,20 @@ final class PromptPanel {
         let rightEdge = screen.frame.maxX - size.width - 8
         originX = min(max(originX, leftEdge), rightEdge)
 
-        let originY = screen.visibleFrame.maxY - size.height - 10
+        // Compute the bottom edge of where the menu bar lives. With auto-hide
+        // enabled, visibleFrame.maxY can equal screen.frame.maxY (full height),
+        // which puts the popover behind the bar when it later reappears. So we
+        // reserve menu-bar height even when it's currently hidden.
+        let buttonAtTopEdge = buttonFrame.minY >= screen.frame.maxY - 1
+        let menuBarBottomY: CGFloat
+        if !buttonAtTopEdge {
+            menuBarBottomY = buttonFrame.minY
+        } else {
+            let reserve = max(NSStatusBar.system.thickness, 32)
+            menuBarBottomY = screen.frame.maxY - reserve
+        }
+        // Sit close under the menu bar like macOS Control Center popovers do.
+        let originY = menuBarBottomY - size.height - 14
         return NSPoint(x: originX, y: originY)
     }
 
