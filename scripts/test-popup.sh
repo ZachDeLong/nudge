@@ -16,6 +16,9 @@ PORT_FILE="$HOME/.config/nudge/port"
 COMMAND="${1:-git push --force origin main}"
 TOOL="${2:-Bash}"
 MODE="${3:-default}"
+# Pattern that "matched" this command (controls whether the ⋯ menu shows).
+# Empty string → no match info → ⋯ menu hidden (mirrors infix matches in real life).
+PATTERN="${4:-Bash(git push:*)}"
 
 # Auto-launch Nudge if it's not running, then wait for the port file.
 if ! pgrep -x Nudge > /dev/null; then
@@ -44,10 +47,11 @@ BODY=$(jq -n \
     --arg cwd "$CWD" \
     --arg sessionId "$SESSION" \
     --arg permissionMode "$MODE" \
-    '{id: $id, tool: $tool, command: $command, cwd: $cwd, sessionId: $sessionId, permissionMode: $permissionMode}')
+    --arg matchedPattern "$PATTERN" \
+    '{id: $id, tool: $tool, command: $command, cwd: $cwd, sessionId: $sessionId, permissionMode: $permissionMode, matchedPattern: (if $matchedPattern == "" then null else $matchedPattern end)}')
 
 echo "→ POST 127.0.0.1:$PORT/prompt"
-echo "  tool=$TOOL  mode=$MODE  command=$(jq -r .command <<<"$BODY")"
+echo "  tool=$TOOL  mode=$MODE  pattern=${PATTERN:-<none>}  command=$(jq -r .command <<<"$BODY")"
 echo "  (waiting for click — Nudge popover should be open)"
 
 RESPONSE=$(curl -sS -X POST -H "Content-Type: application/json" \

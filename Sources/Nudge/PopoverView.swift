@@ -63,11 +63,11 @@ struct PopoverView: View {
             .padding(.bottom, 12)
         }
 
-        // Show the always/session menu whenever there's a real command to act
-        // on. We can't reliably mirror Claude's "always allow" availability
-        // (it depends on Claude's internal pattern classifier), so the
-        // semantics here are simply "stop having Nudge prompt about this".
-        let offerAlways = hasCommand
+        // Mirror Claude's "Always allow" availability via the matched pattern.
+        // Prefix-style (`Bash(x:*)`) and exact rules translate cleanly to
+        // permissions.allow. Infix patterns (`Bash(*x*)`) don't have a Claude-
+        // compatible rule, so we hide the option — same as Claude would.
+        let offerOptions = hasCommand && isPromotablePattern(prompt.matchedPattern)
 
         HStack(spacing: 8) {
             Button(action: onDeny) {
@@ -79,31 +79,29 @@ struct PopoverView: View {
             .controlSize(.large)
             .keyboardShortcut(.cancelAction)
 
-            if offerAlways {
+            Button(action: onAllow) {
+                Text("Allow")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+
+            if offerOptions {
                 Menu {
                     Button("Allow for this session", action: onSessionAllow)
                     Button("Always allow this command", action: onAlwaysAllow)
                 } label: {
-                    Text("Allow")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                } primaryAction: {
-                    onAllow()
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.visible)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .keyboardShortcut(.defaultAction)
-            } else {
-                Button(action: onAllow) {
-                    Text("Allow")
+                    Image(systemName: "ellipsis")
                         .font(.system(size: 13, weight: .semibold))
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .menuIndicator(.hidden)
+                .buttonStyle(.bordered)
                 .controlSize(.large)
-                .keyboardShortcut(.defaultAction)
+                .frame(width: 40)
+                .help("More options")
             }
         }
     }
@@ -117,6 +115,16 @@ struct PopoverView: View {
             .background(Color.primary.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .textSelection(.enabled)
+    }
+
+    /// True when the matched pattern is a Claude-compatible permission rule
+    /// (prefix-style `Bash(x:*)` or exact `Bash(x)`). Infix `Bash(*x*)` is
+    /// Nudge-only and can't be promoted.
+    private func isPromotablePattern(_ pattern: String?) -> Bool {
+        guard let p = pattern, p.hasPrefix("Bash("), p.hasSuffix(")") else { return false }
+        let inner = String(p.dropFirst(5).dropLast())
+        if inner.hasPrefix("*") && inner.hasSuffix("*") { return false }
+        return true
     }
 
     private func highlight(command: String) -> AttributedString {

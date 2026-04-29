@@ -18,8 +18,9 @@ final class SessionAllowList {
     }
 }
 
-/// Promotes a command to ~/.claude/settings.json's permissions.allow array
-/// so Claude Code natively skips the permission flow for it on subsequent runs.
+/// Promotes a permission rule to ~/.claude/settings.json's permissions.allow
+/// array so Claude Code natively skips the permission flow for it on
+/// subsequent runs.
 enum PersistentAllowList {
     enum WriteError: Error {
         case settingsMissing
@@ -32,14 +33,13 @@ enum PersistentAllowList {
         case skippedEmpty
     }
 
-    /// Adds `Bash(<exact command>)` to permissions.allow.
-    /// Returns `.skippedEmpty` if the command is empty/whitespace (would create an invalid rule).
+    /// Adds the given permission rule (e.g. `Bash(git push:*)`) to
+    /// permissions.allow. Pass the full rule string — caller is responsible
+    /// for ensuring it's a valid Claude Code permission rule.
     @discardableResult
-    static func add(command: String) throws -> WriteResult {
-        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return .skippedEmpty
-        }
+    static func addRule(_ rule: String) throws -> WriteResult {
+        let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .skippedEmpty }
 
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")
@@ -53,11 +53,8 @@ enum PersistentAllowList {
         var permissions = root["permissions"] as? [String: Any] ?? [:]
         var allow = permissions["allow"] as? [String] ?? []
 
-        let rule = "Bash(\(trimmed))"
-        if allow.contains(rule) {
-            return .alreadyPresent
-        }
-        allow.append(rule)
+        if allow.contains(trimmed) { return .alreadyPresent }
+        allow.append(trimmed)
         permissions["allow"] = allow
         root["permissions"] = permissions
 

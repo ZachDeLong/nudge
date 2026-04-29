@@ -7,10 +7,13 @@ struct Prompt: Codable, Equatable, Identifiable {
     let cwd: String
     let sessionId: String
     /// Claude Code's `permission_mode` at the time of the prompt — "default",
-    /// "auto", "plan", etc. We use it to decide whether "Always allow" makes
-    /// sense to offer (in auto mode Claude wouldn't have prompted, so the
-    /// concept of "always" is moot).
+    /// "auto", "plan", etc.
     let permissionMode: String?
+    /// The literal pattern from patterns.txt that matched this command, e.g.
+    /// `Bash(git push:*)`. Used to decide whether "Always allow" is offerable
+    /// (only prefix/exact patterns translate to valid Claude permission rules)
+    /// and what gets written to permissions.allow when chosen.
+    let matchedPattern: String?
 }
 
 enum Decision: String, Codable {

@@ -104,13 +104,18 @@ final class MenuBarController: NSObject {
 
     private func alwaysAllowCurrent() {
         guard let prompt = currentPrompt else { return }
+        // Prefer the matched pattern (e.g. `Bash(git push:*)`) so Claude auto-
+        // allows the whole class of commands going forward, not just this exact
+        // string. Fall back to `Bash(<exact>)` if no matched pattern was sent
+        // (older hook builds, or direct test-popup posts without one).
+        let rule = prompt.matchedPattern ?? "Bash(\(prompt.command))"
         do {
-            _ = try PersistentAllowList.add(command: prompt.command)
+            _ = try PersistentAllowList.addRule(rule)
         } catch {
             NSLog("Nudge: failed to write Always Allow: \(error)")
         }
-        // Also session-allow so this current session benefits immediately
-        // (Claude Code may cache settings.json at session start).
+        // Also session-allow this exact command so it doesn't re-prompt within
+        // the same Claude Code session (Claude caches settings.json at start).
         sessionAllow.add(command: prompt.command)
         resolve(.allow)
     }

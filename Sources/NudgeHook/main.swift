@@ -40,24 +40,43 @@ func loadPatterns() -> [String] {
 //   Bash(*<infix>*)   → command contains <infix>
 //   Bash(<exact>)     → command equals <exact>
 // Non-Bash(...) lines are ignored.
-func commandMatches(_ command: String, patterns: [String]) -> Bool {
+//
+// Returns the matched pattern (the literal string from patterns.txt), or nil
+// if no pattern matched. The matched pattern is forwarded to Nudge so the UI
+// can decide whether "Always allow" is offerable (only prefix/exact patterns
+// translate to valid Claude permission rules — infix has no equivalent).
+//
+// Priority: infix matches win over prefix/exact when both fire on the same
+// command. That way `git push --force origin main` (matches both
+// `Bash(git push:*)` and `Bash(*--force*)`) returns the infix, hiding the
+// always-allow option — promoting `git push:*` to permissions.allow would
+// also auto-allow future `git push --force` calls, which is the unsafe path.
+func matchedPattern(for command: String, patterns: [String]) -> String? {
+    var firstInfix: String? = nil
+    var firstPromotable: String? = nil
     for pattern in patterns {
         guard pattern.hasPrefix("Bash(") && pattern.hasSuffix(")") else { continue }
         let inner = String(pattern.dropFirst(5).dropLast())
-        if inner.hasSuffix(":*") {
-            let prefix = String(inner.dropLast(2))
-            if command.hasPrefix(prefix) { return true }
-        } else if inner.hasPrefix("*") && inner.hasSuffix("*") {
+        if inner.hasPrefix("*") && inner.hasSuffix("*") {
             let needle = String(inner.dropFirst().dropLast())
-            if !needle.isEmpty && command.contains(needle) { return true }
+            if !needle.isEmpty && command.contains(needle) {
+                if firstInfix == nil { firstInfix = pattern }
+            }
+        } else if inner.hasSuffix(":*") {
+            let prefix = String(inner.dropLast(2))
+            if command.hasPrefix(prefix), firstPromotable == nil {
+                firstPromotable = pattern
+            }
         } else {
-            if command == inner { return true }
+            if command == inner, firstPromotable == nil {
+                firstPromotable = pattern
+            }
         }
     }
-    return false
+    return firstInfix ?? firstPromotable
 }
 
-guard commandMatches(command, patterns: loadPatterns()) else { exit(0) }
+guard let matched = matchedPattern(for: command, patterns: loadPatterns()) else { exit(0) }
 
 let prompt: [String: Any] = [
     "id": UUID().uuidString,
@@ -66,6 +85,7 @@ let prompt: [String: Any] = [
     "cwd": cwd,
     "sessionId": sessionId,
     "permissionMode": permissionMode,
+    "matchedPattern": matched,
 ]
 guard let body = try? JSONSerialization.data(withJSONObject: prompt) else { exit(0) }
 
