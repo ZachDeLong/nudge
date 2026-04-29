@@ -1,4 +1,4 @@
-.PHONY: build clean run install uninstall sync-patterns
+.PHONY: build clean run install uninstall sync-patterns import-permissions
 
 CONFIG ?= release
 BUILD_DIR := .build/$(CONFIG)
@@ -28,9 +28,8 @@ install: build
 	rm -rf $(APP_DEST)
 	cp -R $(BUILD_DIR)/Nudge.app $(APP_DEST)
 	xattr -dr com.apple.quarantine $(APP_DEST) 2>/dev/null || true
-	@echo "→ Seeding default patterns (if missing)…"
-	mkdir -p $(HOME)/.config/nudge
-	[ -f $(PATTERNS_FILE) ] || cp scripts/default-patterns.txt $(PATTERNS_FILE)
+	@echo "→ Seeding patterns (if missing) + importing from settings.json…"
+	./scripts/seed-patterns.sh
 	@echo "→ Wiring hooks into Claude Code…"
 	./scripts/install-hook.sh
 	@echo ""
@@ -43,6 +42,12 @@ install: build
 sync-patterns:
 	./scripts/install-hook.sh
 	@echo "✓ Hook entries synced from $(PATTERNS_FILE)"
+
+# Merges any new Bash() rules from settings.json's permissions.ask into patterns.txt.
+# Existing patterns are preserved.
+import-permissions:
+	./scripts/seed-patterns.sh --merge
+	@echo "✓ Patterns merged. Active list: $(PATTERNS_FILE)"
 
 uninstall:
 	-pkill -x Nudge 2>/dev/null || true
