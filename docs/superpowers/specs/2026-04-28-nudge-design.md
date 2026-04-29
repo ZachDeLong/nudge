@@ -1,7 +1,18 @@
 # Nudge — Design Spec
 
 **Date:** 2026-04-28
-**Status:** Approved (brainstorm), pending implementation plan
+**Status:** Approved (brainstorm) · Pivoted after Phase 1 hook-ordering investigation (see Risk 1 below) · Pending updated implementation plan
+
+## Phase 1 verification result (2026-04-28)
+
+Two probes were run before any code was written:
+
+1. **PreToolUse + `Bash(*)` filter, observation only.** Result: hook fired for every Bash call including auto-mode-allowed commands (`ls`, `git status`, `git show`). PreToolUse runs **before** auto mode classifies, so the original "intercept only what auto mode would prompt about" design isn't viable through this event.
+2. **PermissionRequest event, observation + attempted `permissionDecision: "allow"` override.** Result: hook fires only when a real permission prompt would appear (good — silent on auto-allow, silent on auto-deny, fires when the terminal would prompt). However, the `permissionDecision` field is ignored on this event — the terminal prompt still showed. PermissionRequest is observe-only for hooks today.
+
+**Pivot:** Move from "broad `PreToolUse + Bash(*)`" to "narrow `PreToolUse` with a configurable list of opt-in patterns" (e.g., `Bash(git push:*)`, `Bash(rm:*)`, `Bash(*deploy*)`). Auto mode continues handling everything else exactly as it does today. Nudge owns the decision UX only for the patterns the user explicitly opts in to.
+
+Trade-off accepted: any prompt-worthy command **not** on Nudge's opt-in list still hits the regular terminal prompt. v1 ships with a sensible default list; users can edit it in `~/.config/nudge/patterns.txt`.
 
 ## Summary
 
@@ -41,6 +52,7 @@ Splitting them lets the app stay running across many Claude Code sessions while 
 - **`PromptServer.swift`** — HTTP/1.1 listener on `127.0.0.1`, built on `Network.framework` (`NWListener` for the TCP socket) with a minimal in-house HTTP/1.1 parser. We deliberately avoid pulling in `swift-nio` for v1 — the protocol surface is tiny (one `POST /prompt` endpoint, JSON body, JSON response) and a self-contained parser keeps the dependency graph clean. Accepts `POST /prompt`, hands the request to `PromptQueue`, suspends the response via Swift `async/await`, returns the decision JSON when the queue resolves.
 - **`PromptQueue.swift`** — Swift actor. FIFO queue of pending prompts; the popover renders the head of the queue. When 2+ prompts are pending, the popover header shows an "X more queued" pill.
 - **`Settings.swift`** — minimal. Holds the current port and the discovery-file path. Persists port to `UserDefaults`. No UI in v1.
+- **`Patterns.swift`** — reads `~/.config/nudge/patterns.txt` and rewrites the corresponding `PreToolUse` entries in `~/.claude/settings.json`. Invoked from the installer and exposed via `nudge-hook --sync`. Default patterns shipped: `Bash(git push:*)`, `Bash(rm:*)`, `Bash(*--force*)`, `Bash(*deploy*)`.
 
 ### `nudge-hook`
 
@@ -55,20 +67,24 @@ A small Swift CLI binary built alongside the app target.
 
 ### Claude Code hook entry
 
-Added to `~/.claude/settings.json` by the installer:
+Added to `~/.claude/settings.json` by the installer. One `PreToolUse` block per opt-in pattern, each scoped to a specific risky command via the `if` field:
 
 ```json
 {
   "hooks": {
-    "PreToolUse": [{
-      "if": "Bash(*)",
-      "hooks": [{ "type": "command", "command": "/Applications/Nudge.app/Contents/MacOS/nudge-hook" }]
-    }]
+    "PreToolUse": [
+      { "if": "Bash(git push:*)",   "hooks": [{ "type": "command", "command": "/Applications/Nudge.app/Contents/MacOS/nudge-hook" }] },
+      { "if": "Bash(rm:*)",         "hooks": [{ "type": "command", "command": "/Applications/Nudge.app/Contents/MacOS/nudge-hook" }] },
+      { "if": "Bash(*--force*)",    "hooks": [{ "type": "command", "command": "/Applications/Nudge.app/Contents/MacOS/nudge-hook" }] },
+      { "if": "Bash(*deploy*)",     "hooks": [{ "type": "command", "command": "/Applications/Nudge.app/Contents/MacOS/nudge-hook" }] }
+    ]
   }
 }
 ```
 
-The `if: "Bash(*)"` filter scopes Nudge to Bash tool calls. Other tools (Read, Edit, etc.) bypass it entirely. Future versions can broaden this.
+The full pattern list is read from `~/.config/nudge/patterns.txt` (one pattern per line, `#` for comments). The installer rewrites the hook entries from this file. v1 ships with the four patterns above; users can edit the file and re-run `make sync-patterns` (or `nudge-hook --sync`) to regenerate the settings.json entries.
+
+This means Nudge handles a **specific opt-in set** of risky commands rather than every prompt auto mode would have shown. Anything not on the list still hits the regular terminal prompt — graceful degradation. Adding a new pattern is one line in `patterns.txt` plus a `make sync-patterns`.
 
 ## Data flow
 
@@ -147,11 +163,11 @@ UI snapshot tests are out of scope for v1 — they're flaky for menu bar apps an
 
 ## Risks and open questions
 
-### Risk 1: PreToolUse vs auto mode ordering (highest priority)
+### Risk 1: PreToolUse vs auto mode ordering (RESOLVED — design pivoted)
 
-If `PreToolUse` hooks fire **before** auto mode classifies a request, Nudge would show a popover for every Bash call — including ones auto mode would silently approve. That makes things worse, not better.
+**Outcome:** PreToolUse fires before auto mode classifies (confirmed via probe 1, Phase 1). PermissionRequest fires only when a real prompt would otherwise appear (confirmed via probe 2), but cannot override the decision (confirmed: terminal prompt still appeared after returning `permissionDecision: "allow"`).
 
-**Mitigation:** the **first implementation step** before any UI work is to install a logging-only hook (`echo "$timestamp $tool_input" >> /tmp/nudge-probe.log`) and run several Claude Code sessions. Confirm the hook only fires for prompts auto mode would have shown. If it fires for everything, we either switch to the `PermissionRequest` event or the design needs revision.
+**Resolution:** Pivoted to "narrow PreToolUse with opt-in patterns" approach. Nudge handles a configurable list of risky patterns rather than intercepting all auto-mode prompts. See "Phase 1 verification result" section above.
 
 ### Risk 2: First-launch macOS approval
 
