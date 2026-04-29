@@ -75,25 +75,12 @@ struct PopoverView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
-        }
-
-        if hasCommand {
-            HStack(spacing: 6) {
-                Button(action: onSessionAllow) {
-                    Text("Allow this session")
-                        .frame(maxWidth: .infinity)
+                .contextMenu {
+                    if hasCommand {
+                        Button("Always allow this command", action: onAlwaysAllow)
+                        Button("Allow for this session", action: onSessionAllow)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button(action: onAlwaysAllow) {
-                    Text("Always allow")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(.top, 8)
         }
     }
 

@@ -276,7 +276,7 @@ final class PromptPanel {
         let rightEdge = screen.frame.maxX - size.width - 8
         originX = min(max(originX, leftEdge), rightEdge)
 
-        let originY = screen.visibleFrame.maxY - size.height - 4
+        let originY = screen.visibleFrame.maxY - size.height - 10
         return NSPoint(x: originX, y: originY)
     }
 
@@ -285,7 +285,7 @@ final class PromptPanel {
               ?? NSScreen.main else { return .zero }
         let visible = screen.visibleFrame
         let size = panel.frame.size
-        let margin: CGFloat = 12
+        let margin: CGFloat = 14
         return NSPoint(x: visible.maxX - size.width - margin,
                        y: visible.maxY - size.height - margin)
     }
