@@ -12,6 +12,7 @@ final class MenuBarController: NSObject {
     private var pulseTimer: Timer?
     private var keyMonitor: Any?
     private var clickMonitor: Any?
+    private var settings: Prefs = .load()
 
     init(queue: PromptQueue) {
         self.queue = queue
@@ -24,19 +25,127 @@ final class MenuBarController: NSObject {
 
     private func configureStatusItem() {
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Nudge")
-            button.image?.isTemplate = true
             button.target = self
-            button.action = #selector(toggleManually(_:))
+            button.action = #selector(handleClick(_:))
+            // Receive both left and right mouse-up so we can route them
+            // differently: left toggles the popover, right shows the menu.
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        refreshIcon()
+    }
+
+    /// Updates the menu bar icon based on enabled state and current prompt.
+    private func refreshIcon() {
+        guard let button = statusItem.button else { return }
+        let symbol: String
+        let tint: NSColor?
+        if !settings.enabled {
+            symbol = "moon.zzz"
+            tint = NSColor.tertiaryLabelColor
+        } else if currentPrompt != nil {
+            symbol = "circle.fill"
+            tint = NSColor.systemRed
+        } else {
+            symbol = "circle.fill"
+            tint = nil
+        }
+        let img = NSImage(systemSymbolName: symbol, accessibilityDescription: "Nudge")
+        img?.isTemplate = (tint == nil && currentPrompt == nil) || !settings.enabled
+        button.image = img
+        button.contentTintColor = tint
+    }
+
+    @objc private func handleClick(_ sender: AnyObject?) {
+        let event = NSApp.currentEvent
+        let isRightClick = event?.type == .rightMouseUp
+            || (event?.modifierFlags.contains(.control) ?? false)
+        if isRightClick {
+            showContextMenu()
+        } else {
+            togglePopover()
         }
     }
 
-    @objc private func toggleManually(_ sender: AnyObject?) {
+    private func togglePopover() {
         if panel.isVisible {
             dismissPanel()
         } else {
             renderAndShow()
         }
+    }
+
+    /// Builds and displays the right-click menu with the on/off toggles.
+    private func showContextMenu() {
+        let menu = NSMenu()
+
+        let pauseItem = NSMenuItem(
+            title: settings.enabled ? "Pause Nudge" : "Resume Nudge",
+            action: #selector(toggleEnabled),
+            keyEquivalent: ""
+        )
+        pauseItem.target = self
+        menu.addItem(pauseItem)
+
+        let skipItem = NSMenuItem(
+            title: "Skip when terminal is focused",
+            action: #selector(toggleSkipWhenTerminalFocused),
+            keyEquivalent: ""
+        )
+        skipItem.target = self
+        skipItem.state = settings.skipWhenTerminalFocused ? .on : .off
+        menu.addItem(skipItem)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(
+            title: "Quit Nudge",
+            action: #selector(quitApp),
+            keyEquivalent: "q"
+        )
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        // Temporarily attach the menu so the status item opens it on this
+        // click. Detach right after so future left-clicks fire our action
+        // instead of the menu.
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    @objc private func toggleEnabled() {
+        togglePauseAndRefresh()
+    }
+
+    @objc private func toggleSkipWhenTerminalFocused() {
+        toggleSkipTerminalAndRefresh()
+    }
+
+    private func togglePauseAndRefresh() {
+        settings.enabled.toggle()
+        settings.save()
+        refreshIcon()
+        // If Nudge was paused while a prompt was up, resolve it so callers
+        // unblock instead of waiting on a popover that won't appear.
+        if !settings.enabled, currentPrompt != nil {
+            resolve(currentPrompt?.resolvedKind == .ask ? .cancel : .deny)
+        }
+        // Re-render the popover so the idle UI reflects the new state.
+        if panel.isVisible, currentPrompt == nil {
+            renderAndShow()
+        }
+    }
+
+    private func toggleSkipTerminalAndRefresh() {
+        settings.skipWhenTerminalFocused.toggle()
+        settings.save()
+        if panel.isVisible, currentPrompt == nil {
+            renderAndShow()
+        }
+    }
+
+    @objc private func quitApp() {
+        NSApp.terminate(nil)
     }
 
     private func renderAndShow() {
@@ -45,12 +154,16 @@ final class MenuBarController: NSObject {
             content: PopoverView(
                 prompt: currentPrompt,
                 queueDepth: queueDepth,
+                prefs: settings,
                 onAllow: { [weak self] in self?.resolve(.allow) },
                 onDeny:  { [weak self] in self?.resolve(.deny) },
                 onAlwaysAllow: { [weak self] in self?.alwaysAllowCurrent() },
                 onSessionAllow: { [weak self] in self?.sessionAllowCurrent() },
                 onSubmitText: { [weak self] text in self?.submitAskText(text) },
-                onCancelAsk: { [weak self] in self?.resolve(.cancel) }
+                onCancelAsk: { [weak self] in self?.resolve(.cancel) },
+                onTogglePause: { [weak self] in self?.togglePauseAndRefresh() },
+                onToggleSkipTerminal: { [weak self] in self?.toggleSkipTerminalAndRefresh() },
+                onQuit: { [weak self] in self?.quitApp() }
             ),
             anchorTo: statusItem.button,
             makeKey: isAsk
@@ -85,11 +198,7 @@ final class MenuBarController: NSObject {
 
         self.currentPrompt = prompt
         self.queueDepth = depth
-
-        let img = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Nudge")
-        img?.isTemplate = (prompt == nil)
-        statusItem.button?.image = img
-        statusItem.button?.contentTintColor = (prompt == nil) ? nil : NSColor.systemRed
+        refreshIcon()
 
         if let prompt = prompt {
             startPulse()

@@ -4,12 +4,16 @@ import AppKit
 struct PopoverView: View {
     let prompt: Prompt?
     let queueDepth: Int
+    let prefs: Prefs
     let onAllow: () -> Void
     let onDeny: () -> Void
     let onAlwaysAllow: () -> Void
     let onSessionAllow: () -> Void
     let onSubmitText: (String) -> Void
     let onCancelAsk: () -> Void
+    let onTogglePause: () -> Void
+    let onToggleSkipTerminal: () -> Void
+    let onQuit: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -200,17 +204,50 @@ struct PopoverView: View {
 
     @ViewBuilder
     private func idle() -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 28))
-                .foregroundColor(.secondary)
-            Text("Nudge is ready")
-                .font(.system(size: 13, weight: .medium))
-            Text("Waiting for permission requests…")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            // Status row: brand badge + state pill
+            HStack(spacing: 11) {
+                ToolBadge(tool: "Bash") // generic Nudge badge
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Nudge")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(prefs.enabled ? "Watching for permission requests" : "Paused")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                Spacer(minLength: 8)
+                StatusDot(active: prefs.enabled)
+            }
+
+            // Pause / Resume — primary action.
+            Button(action: onTogglePause) {
+                Text(prefs.enabled ? "Pause Nudge" : "Resume Nudge")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+
+            // Settings toggle — checkbox-style row.
+            Toggle(isOn: Binding(
+                get: { prefs.skipWhenTerminalFocused },
+                set: { _ in onToggleSkipTerminal() }
+            )) {
+                Text("Skip when terminal is focused")
+                    .font(.system(size: 12))
+            }
+            .toggleStyle(.checkbox)
+
+            HStack {
+                Spacer()
+                Button(action: onQuit) {
+                    Text("Quit Nudge")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .padding(.vertical, 24)
     }
 }
 
@@ -278,6 +315,15 @@ private struct AskBody: View {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         onSubmit(trimmed)
+    }
+}
+
+private struct StatusDot: View {
+    let active: Bool
+    var body: some View {
+        Circle()
+            .fill(active ? Color.green : Color.secondary.opacity(0.5))
+            .frame(width: 8, height: 8)
     }
 }
 

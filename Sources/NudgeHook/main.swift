@@ -1,5 +1,30 @@
 import Foundation
 import Darwin
+import AppKit
+
+// MARK: - Settings (mirrored from Nudge target)
+//
+// We re-read prefs.json on every invocation so the menu bar app's toggles
+// take effect immediately. Both targets agree on the schema.
+
+struct HookSettings: Codable {
+    var enabled: Bool
+    var skipWhenTerminalFocused: Bool
+    static let `default` = HookSettings(enabled: true, skipWhenTerminalFocused: true)
+}
+
+let prefsURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".config/nudge/prefs.json")
+let settings: HookSettings = {
+    if let data = try? Data(contentsOf: prefsURL),
+       let s = try? JSONDecoder().decode(HookSettings.self, from: data) {
+        return s
+    }
+    return .default
+}()
+
+// Master switch — paused Nudge means Claude falls through to its own prompt.
+guard settings.enabled else { exit(0) }
 
 // MARK: - Read stdin
 
@@ -13,6 +38,30 @@ let toolInput = inputJSON["tool_input"] as? [String: Any] ?? [:]
 let cwd = inputJSON["cwd"] as? String ?? FileManager.default.currentDirectoryPath
 let sessionId = inputJSON["session_id"] as? String ?? "unknown"
 let permissionMode = inputJSON["permission_mode"] as? String ?? "default"
+
+// MARK: - Skip when user is already at a terminal/IDE
+//
+// If the frontmost app is one Claude likely lives in, the user is already
+// looking at it — Claude's native prompt is fine. Saves a popover trip.
+
+let terminalBundleIDs: Set<String> = [
+    "com.apple.Terminal",
+    "com.googlecode.iterm2",
+    "com.mitchellh.ghostty",
+    "dev.warp.Warp-Stable",
+    "dev.warp.Warp",
+    "com.github.wez.wezterm",
+    "co.zeit.hyper",
+    "com.microsoft.VSCode",
+    "com.microsoft.VSCodeInsiders",
+    "com.visualstudio.code.oss",
+    "com.todesktop.230313mzl4w4u92",
+]
+if settings.skipWhenTerminalFocused,
+   let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+   terminalBundleIDs.contains(frontmost) {
+    exit(0)
+}
 
 // MARK: - Tool dispatch
 

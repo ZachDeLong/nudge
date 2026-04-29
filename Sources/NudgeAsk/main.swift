@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import AppKit
 
 // MARK: - Args
 //
@@ -17,6 +18,42 @@ let question = args[1...].joined(separator: " ")
 guard !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
     fputs("nudge-ask: question is empty\n", stderr)
     exit(2)
+}
+
+// Honor the same toggles the hook respects. If Nudge is paused, or the user
+// is already at a terminal/IDE with the skip toggle on, exit non-zero so
+// Claude falls back to asking inline in the terminal.
+struct HookSettings: Codable {
+    var enabled: Bool
+    var skipWhenTerminalFocused: Bool
+    static let `default` = HookSettings(enabled: true, skipWhenTerminalFocused: true)
+}
+let prefsURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".config/nudge/prefs.json")
+let askSettings: HookSettings = {
+    if let data = try? Data(contentsOf: prefsURL),
+       let s = try? JSONDecoder().decode(HookSettings.self, from: data) {
+        return s
+    }
+    return .default
+}()
+
+if !askSettings.enabled {
+    fputs("nudge-ask: Nudge is paused\n", stderr)
+    exit(1)
+}
+
+let terminalBundleIDs: Set<String> = [
+    "com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty",
+    "dev.warp.Warp-Stable", "dev.warp.Warp", "com.github.wez.wezterm",
+    "co.zeit.hyper", "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders",
+    "com.visualstudio.code.oss", "com.todesktop.230313mzl4w4u92",
+]
+if askSettings.skipWhenTerminalFocused,
+   let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+   terminalBundleIDs.contains(frontmost) {
+    fputs("nudge-ask: terminal is focused (skip-when-terminal toggle is on)\n", stderr)
+    exit(1)
 }
 
 let cwd = FileManager.default.currentDirectoryPath
