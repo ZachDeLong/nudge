@@ -134,7 +134,7 @@ Either way, pre-allowing the `Bash(...:*)` rule keeps Claude from prompting befo
 
 ## Known limits
 
-- **Personal use only for now.** The build is unsigned. The Makefile runs `xattr -d com.apple.quarantine` so it launches without Gatekeeper drama, but it isn't notarized.
+- **Unsigned build.** The Makefile runs `xattr -d com.apple.quarantine` so it launches without Gatekeeper complaining, but the build isn't code-signed or notarized. If you download the prebuilt zip, you'll need to run that `xattr` command yourself once.
 - **One Mac at a time.** Patterns aren't synced across machines.
 - **Hooks fire before Claude classifies.** That's why patterns are explicit opt-in rather than "everything auto mode would prompt about." `PreToolUse` runs before Claude decides whether a call would trigger a prompt, and the `PermissionRequest` event (which fires at the right time) is observe-only.
 - **Queue is FIFO with a 5-minute timeout.** Pile up enough prompts and the older ones expire.
