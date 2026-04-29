@@ -8,6 +8,8 @@ struct PopoverView: View {
     let onDeny: () -> Void
     let onAlwaysAllow: () -> Void
     let onSessionAllow: () -> Void
+    let onSubmitText: (String) -> Void
+    let onCancelAsk: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,26 +26,19 @@ struct PopoverView: View {
 
     @ViewBuilder
     private func content(for prompt: Prompt) -> some View {
-        HStack(spacing: 11) {
-            ToolBadge(tool: prompt.tool)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Permission request")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("\(prompt.tool) · \(URL(fileURLWithPath: prompt.cwd).lastPathComponent)")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-            Spacer(minLength: 8)
-            if queueDepth > 1 {
-                Text("\(queueDepth - 1) queued")
-                    .font(.system(size: 10, weight: .medium))
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.08))
-                    .foregroundColor(.secondary)
-                    .clipShape(Capsule())
-            }
+        switch prompt.resolvedKind {
+        case .permission:
+            permissionContent(for: prompt)
+        case .ask:
+            askContent(for: prompt)
         }
-        .padding(.bottom, 12)
+    }
+
+    // MARK: - Permission flow
+
+    @ViewBuilder
+    private func permissionContent(for prompt: Prompt) -> some View {
+        header(prompt: prompt, title: "Permission request")
 
         let trimmed = prompt.command.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasCommand = !trimmed.isEmpty
@@ -63,10 +58,6 @@ struct PopoverView: View {
             .padding(.bottom, 12)
         }
 
-        // Mirror Claude's "Always allow" availability via the matched pattern.
-        // Prefix-style (`Bash(x:*)`) and exact rules translate cleanly to
-        // permissions.allow. Infix patterns (`Bash(*x*)`) don't have a Claude-
-        // compatible rule, so we hide the option — same as Claude would.
         let offerOptions = hasCommand && isPromotablePattern(prompt.matchedPattern)
 
         HStack(spacing: 8) {
@@ -106,17 +97,47 @@ struct PopoverView: View {
         }
     }
 
+    // MARK: - Ask flow
+
+    @ViewBuilder
+    private func askContent(for prompt: Prompt) -> some View {
+        header(prompt: prompt, title: "Claude is asking")
+        AskBody(question: prompt.command, onSubmit: onSubmitText, onCancel: onCancelAsk)
+    }
+
+    // MARK: - Shared header
+
+    @ViewBuilder
+    private func header(prompt: Prompt, title: String) -> some View {
+        HStack(spacing: 11) {
+            ToolBadge(tool: prompt.tool)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text("\(prompt.tool) · \(URL(fileURLWithPath: prompt.cwd).lastPathComponent)")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 8)
+            if queueDepth > 1 {
+                Text("\(queueDepth - 1) queued")
+                    .font(.system(size: 10, weight: .medium))
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(Color.primary.opacity(0.08))
+                    .foregroundColor(.secondary)
+                    .clipShape(Capsule())
+            }
+        }
+        .padding(.bottom, 12)
+    }
+
     @ViewBuilder
     private func commandBox(for prompt: Prompt) -> some View {
-        // Cap height so a huge command (long heredoc, big file content, etc.)
-        // can't push the popover off-screen — overflow scrolls inside the box.
         ScrollView(.vertical, showsIndicators: true) {
             Group {
                 if prompt.tool == "Bash" {
                     Text(highlight(command: prompt.command))
                 } else {
-                    // Path-based tools (Edit/Write/Read/...): no Bash-specific
-                    // syntax highlighting, just show the path.
                     Text(prompt.command)
                 }
             }
@@ -131,11 +152,16 @@ struct PopoverView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    /// True when the matched pattern is a Claude-compatible permission rule
-    /// (prefix-style `Bash(x:*)` or exact `Bash(x)`). Infix `Bash(*x*)` is
-    /// Nudge-only and can't be promoted.
     private func isPromotablePattern(_ pattern: String?) -> Bool {
-        guard let p = pattern, p.hasPrefix("Bash("), p.hasSuffix(")") else { return false }
+        guard let p = pattern, p.hasPrefix("Bash("), p.hasSuffix(")") else {
+            // Path-based patterns (Edit/Write/Read/...) are always promotable.
+            if let p = pattern,
+               (p.hasPrefix("Edit(") || p.hasPrefix("Write(") || p.hasPrefix("Read(")
+                || p.hasPrefix("MultiEdit(") || p.hasPrefix("NotebookEdit(")) {
+                return true
+            }
+            return false
+        }
         let inner = String(p.dropFirst(5).dropLast())
         if inner.hasPrefix("*") && inner.hasSuffix("*") { return false }
         return true
@@ -188,6 +214,73 @@ struct PopoverView: View {
     }
 }
 
+// MARK: - Ask body (text input)
+
+private struct AskBody: View {
+    let question: String
+    let onSubmit: (String) -> Void
+    let onCancel: () -> Void
+    @State private var text: String = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Question
+            ScrollView(.vertical, showsIndicators: true) {
+                Text(question)
+                    .font(.system(size: 13))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .textSelection(.enabled)
+            }
+            .frame(maxHeight: 120)
+            .background(Color.primary.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            // Answer field — TextField with vertical axis gives a multi-line
+            // input with consistent padding (TextEditor adds its own and
+            // misaligns with placeholder).
+            TextField("Type your answer…", text: $text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .lineLimit(3...8)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(Color.primary.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .focused($focused)
+
+            // Buttons
+            HStack(spacing: 8) {
+                Button(action: onCancel) {
+                    Text("Cancel")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .keyboardShortcut(.cancelAction)
+
+                Button(action: submit) {
+                    Text("Send")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
+                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .onAppear { focused = true }
+    }
+
+    private func submit() {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        onSubmit(trimmed)
+    }
+}
+
 private struct ToolBadge: View {
     let tool: String
 
@@ -212,6 +305,7 @@ private struct ToolBadge: View {
         case "Edit", "Write":   return "pencil"
         case "Read":            return "eye.fill"
         case "Glob", "Grep":    return "magnifyingglass"
+        case "Ask":             return "bubble.left.fill"
         default:                return "sparkles"
         }
     }

@@ -81,28 +81,41 @@ actor PromptServer {
         connection.cancel()
     }
 
+    /// Awaits NWConnection.send completion so the caller can safely cancel
+    /// the connection afterwards without dropping in-flight data.
+    private func sendAndAwait(_ data: Data, on conn: NWConnection) async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            conn.send(content: data, completion: .contentProcessed { _ in
+                cont.resume()
+            })
+        }
+    }
+
     private func respond(to req: HTTPCodec.Request, on conn: NWConnection) async {
-        guard req.method == "POST", req.path == "/prompt" else {
+        guard req.method == "POST", req.path == "/prompt" || req.path == "/ask" else {
             let resp = HTTPCodec.writeResponse(status: 404, contentType: "text/plain", body: Array("not found".utf8))
-            conn.send(content: Data(resp), completion: .contentProcessed { _ in })
+            await sendAndAwait(Data(resp), on: conn)
             return
         }
+        // /prompt and /ask use the same Prompt body shape — the `kind` field
+        // discriminates. We accept both endpoints to keep the URL paths
+        // self-documenting (the CLI binaries hit different paths).
         let prompt: Prompt
         do {
             prompt = try JSONDecoder().decode(Prompt.self, from: Data(req.body))
         } catch {
             let resp = HTTPCodec.writeResponse(status: 400, contentType: "text/plain", body: Array("bad json".utf8))
-            conn.send(content: Data(resp), completion: .contentProcessed { _ in })
+            await sendAndAwait(Data(resp), on: conn)
             return
         }
         do {
-            let decision = try await queue.enqueueWithTimeout(prompt, seconds: timeoutSeconds)
-            let body = try JSONEncoder().encode(DecisionResponse(decision: decision))
+            let response = try await queue.enqueueWithTimeout(prompt, seconds: timeoutSeconds)
+            let body = try JSONEncoder().encode(response)
             let resp = HTTPCodec.writeResponse(status: 200, contentType: "application/json", body: Array(body))
-            conn.send(content: Data(resp), completion: .contentProcessed { _ in })
+            await sendAndAwait(Data(resp), on: conn)
         } catch {
             let resp = HTTPCodec.writeResponse(status: 408, contentType: "text/plain", body: Array("timeout".utf8))
-            conn.send(content: Data(resp), completion: .contentProcessed { _ in })
+            await sendAndAwait(Data(resp), on: conn)
         }
     }
 }

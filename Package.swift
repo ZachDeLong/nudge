@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "Nudge", targets: ["Nudge"]),
         .executable(name: "nudge-hook", targets: ["NudgeHook"]),
+        .executable(name: "nudge-ask", targets: ["NudgeAsk"]),
     ],
     targets: [
         .executableTarget(
@@ -16,6 +17,10 @@ let package = Package(
         .executableTarget(
             name: "NudgeHook",
             path: "Sources/NudgeHook"
+        ),
+        .executableTarget(
+            name: "NudgeAsk",
+            path: "Sources/NudgeAsk"
         ),
     ]
 )

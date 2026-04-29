@@ -3,7 +3,7 @@ import Foundation
 actor PromptQueue {
     private struct Pending {
         let prompt: Prompt
-        let continuation: CheckedContinuation<Decision, Error>
+        let continuation: CheckedContinuation<DecisionResponse, Error>
     }
 
     private var pending: [Pending] = []
@@ -13,7 +13,7 @@ actor PromptQueue {
         case timedOut
     }
 
-    func enqueue(_ prompt: Prompt) async throws -> Decision {
+    func enqueue(_ prompt: Prompt) async throws -> DecisionResponse {
         return try await withCheckedThrowingContinuation { cont in
             let item = Pending(prompt: prompt, continuation: cont)
             let wasEmpty = pending.isEmpty
@@ -22,8 +22,8 @@ actor PromptQueue {
         }
     }
 
-    func enqueueWithTimeout(_ prompt: Prompt, seconds: TimeInterval) async throws -> Decision {
-        try await withThrowingTaskGroup(of: Decision.self) { group in
+    func enqueueWithTimeout(_ prompt: Prompt, seconds: TimeInterval) async throws -> DecisionResponse {
+        try await withThrowingTaskGroup(of: DecisionResponse.self) { group in
             group.addTask { try await self.enqueue(prompt) }
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
@@ -36,11 +36,16 @@ actor PromptQueue {
         }
     }
 
-    func resolveHead(with decision: Decision) {
+    func resolveHead(with response: DecisionResponse) {
         guard !pending.isEmpty else { return }
         let head = pending.removeFirst()
-        head.continuation.resume(returning: decision)
+        head.continuation.resume(returning: response)
         notifyHead()
+    }
+
+    /// Convenience for permission decisions (allow/deny/cancel — no text payload).
+    func resolveHead(with decision: Decision) {
+        resolveHead(with: DecisionResponse(decision: decision, text: nil))
     }
 
     func setOnHeadChange(_ cb: @escaping (Prompt?, Int) -> Void) {

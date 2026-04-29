@@ -40,6 +40,7 @@ final class MenuBarController: NSObject {
     }
 
     private func renderAndShow() {
+        let isAsk = currentPrompt?.resolvedKind == .ask
         panel.show(
             content: PopoverView(
                 prompt: currentPrompt,
@@ -47,9 +48,12 @@ final class MenuBarController: NSObject {
                 onAllow: { [weak self] in self?.resolve(.allow) },
                 onDeny:  { [weak self] in self?.resolve(.deny) },
                 onAlwaysAllow: { [weak self] in self?.alwaysAllowCurrent() },
-                onSessionAllow: { [weak self] in self?.sessionAllowCurrent() }
+                onSessionAllow: { [weak self] in self?.sessionAllowCurrent() },
+                onSubmitText: { [weak self] text in self?.submitAskText(text) },
+                onCancelAsk: { [weak self] in self?.resolve(.cancel) }
             ),
-            anchorTo: statusItem.button
+            anchorTo: statusItem.button,
+            makeKey: isAsk
         )
         // Click-outside dismiss applies to every visible state of the panel,
         // including the idle "Nudge is ready" view. The handler decides whether
@@ -71,8 +75,10 @@ final class MenuBarController: NSObject {
     }
 
     private func handleHead(prompt: Prompt?, depth: Int) {
-        // Auto-resolve via session allow list before any UI.
-        if let prompt = prompt, sessionAllow.contains(command: prompt.command) {
+        // Auto-resolve via session allow list before any UI (permission only).
+        if let prompt = prompt,
+           prompt.resolvedKind == .permission,
+           sessionAllow.contains(command: prompt.command) {
             Task { await queue.resolveHead(with: .allow) }
             return
         }
@@ -85,9 +91,16 @@ final class MenuBarController: NSObject {
         statusItem.button?.image = img
         statusItem.button?.contentTintColor = (prompt == nil) ? nil : NSColor.systemRed
 
-        if prompt != nil {
+        if let prompt = prompt {
             startPulse()
-            startKeyMonitor()
+            // Global Enter/Esc shortcuts only make sense for permission
+            // prompts. For asks, the popover is key (TextEditor receives
+            // keystrokes) and dismissal is via the in-popover buttons.
+            if prompt.resolvedKind == .permission {
+                startKeyMonitor()
+            } else {
+                stopKeyMonitor()
+            }
             renderAndShow()
         } else {
             stopPulse()
@@ -100,6 +113,11 @@ final class MenuBarController: NSObject {
 
     private func resolve(_ decision: Decision) {
         Task { await queue.resolveHead(with: decision) }
+    }
+
+    private func submitAskText(_ text: String) {
+        let response = DecisionResponse(decision: .text, text: text)
+        Task { await queue.resolveHead(with: response) }
     }
 
     private func alwaysAllowCurrent() {
@@ -176,11 +194,12 @@ final class MenuBarController: NSObject {
                   !buttonScreenFrame.contains(mouseLocation) else { return }
 
             DispatchQueue.main.async {
-                if self.currentPrompt != nil {
-                    self.resolve(.deny)
-                } else {
+                guard let prompt = self.currentPrompt else {
                     self.dismissPanel()
+                    return
                 }
+                // Permission prompts deny on click-outside; asks just cancel.
+                self.resolve(prompt.resolvedKind == .ask ? .cancel : .deny)
             }
         }
     }
@@ -191,6 +210,15 @@ final class MenuBarController: NSObject {
 }
 
 // MARK: - PromptPanel
+
+/// NSPanel subclass that allows becoming key window even when borderless.
+/// Required for the ask popover so the TextEditor receives keystrokes.
+/// We still gate this behind `panel.makeKey()` calls — permission popovers
+/// don't call makeKey, so they don't grab focus.
+private final class KeyablePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
 
 @MainActor
 final class PromptPanel {
@@ -203,7 +231,7 @@ final class PromptPanel {
     init() {
         self.hosting = NSHostingController(rootView: AnyView(EmptyView()))
         let size = NSSize(width: 380, height: 200)
-        self.panel = NSPanel(
+        self.panel = KeyablePanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
@@ -226,7 +254,7 @@ final class PromptPanel {
     /// the real height comes from `hosting.view.fittingSize` in show().
     private static let fallbackContentSize = NSSize(width: 380, height: 200)
 
-    func show(content: PopoverView, anchorTo button: NSStatusBarButton?) {
+    func show(content: PopoverView, anchorTo button: NSStatusBarButton?, makeKey: Bool = false) {
         hosting.rootView = AnyView(
             content
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -255,6 +283,13 @@ final class PromptPanel {
         panel.alphaValue = 0
         panel.setFrameOrigin(startOrigin)
         panel.orderFrontRegardless()
+        if makeKey {
+            // Ask popovers need key-window status so the TextEditor receives
+            // keystrokes. Permission popovers stay non-key (user keeps focus
+            // in the terminal). `.nonactivatingPanel` lets us take key without
+            // switching app activation.
+            panel.makeKey()
+        }
 
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.26
