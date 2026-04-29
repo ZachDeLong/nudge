@@ -48,7 +48,7 @@ cd nudge
 open -ga Nudge
 ```
 
-Requirements: macOS 14+. Source builds also need Xcode Command Line Tools (no full Xcode required).
+Requirements: macOS 14+ and `jq` (the hook installer reads and rewrites `~/.claude/settings.json`). Source builds also need Xcode Command Line Tools (no full Xcode required). Install jq with `brew install jq`.
 
 ## How it works
 
@@ -87,7 +87,16 @@ Each popover has a `⋯` button next to Allow with two options:
 - **Allow for this session.** Adds the exact command to an in-memory list, won't ask again until you restart Nudge.
 - **Always allow this command.** Promotes the matched pattern (e.g. `Bash(git push:*)`) into your `permissions.allow`. Claude auto-allows the whole class going forward; Nudge stops prompting.
 
-The menu only shows up when the matched pattern can be promoted to a valid Claude rule. Infix patterns like `Bash(*--force*)` aren't promotable, so on those you only see Allow / Deny. If a command matches both an infix and a prefix pattern, the infix wins on safety: promoting `git push:*` would also auto-allow `git push --force` next time, which is the bad path.
+### Why infix patterns can't be promoted
+
+Promoting a pattern adds it to `permissions.allow`, so Claude auto-approves the whole class going forward. That's the right move for prefix patterns like `Bash(git push:*)` — you explicitly opted into "anything starting with `git push`."
+
+Infix patterns are deny-leaning. You wrote `Bash(*--force*)` because you want to be asked any time `--force` appears. Promoting it would mean "auto-allow any command containing `--force`" — the opposite of the intent. So:
+
+- The "Always allow" menu is hidden on infix matches; only Allow / Deny show.
+- When a command matches both an infix and a prefix pattern, the infix wins. If you later promote `Bash(git push:*)` from a regular `git push origin main`, the next `git push --force` will still trigger a prompt, because the infix match takes priority.
+
+The hook's matcher returns infix hits before promotable prefix/exact hits for exactly this reason.
 
 ## Settings
 

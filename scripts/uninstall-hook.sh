@@ -5,6 +5,12 @@ set -euo pipefail
 SETTINGS="$HOME/.claude/settings.json"
 HOOK_CMD="/Applications/Nudge.app/Contents/MacOS/nudge-hook"
 
+if ! command -v jq >/dev/null 2>&1; then
+    echo "✗ jq is required but not installed." >&2
+    echo "  Install with: brew install jq" >&2
+    exit 1
+fi
+
 if [[ ! -f "$SETTINGS" ]]; then
     echo "no settings file, nothing to remove"
     exit 0
