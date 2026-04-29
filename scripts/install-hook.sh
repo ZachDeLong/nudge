@@ -25,22 +25,25 @@ jq -e . "$SETTINGS" > /dev/null
 BACKUP="$SETTINGS.bak.$(date +%s)"
 cp "$SETTINGS" "$BACKUP"
 
-# Read patterns into a JSON array (skip comments and blanks).
-PATTERNS_JSON=$(grep -v '^[[:space:]]*#' "$PATTERNS" | grep -v '^[[:space:]]*$' | jq -R . | jq -s .)
+# Count active patterns for the success message (skip comments and blanks).
+PATTERN_COUNT=$(grep -v '^[[:space:]]*#' "$PATTERNS" | grep -v '^[[:space:]]*$' | wc -l | tr -d ' ')
 
+# Install one PreToolUse entry with matcher "Bash" — Claude Code's `matcher`
+# field filters by tool name only, so we narrow to Bash here and let the hook
+# binary do the per-command pattern matching against patterns.txt.
+#
 # 1) Remove any prior Nudge entries (those whose hooks reference HOOK_CMD).
-# 2) Append one entry per current pattern.
+# 2) Append a single entry that fires on Bash calls.
 jq \
   --arg cmd "$HOOK_CMD" \
-  --argjson patterns "$PATTERNS_JSON" \
   '
     .hooks //= {} |
     .hooks.PreToolUse //= [] |
     .hooks.PreToolUse |= map(select((.hooks // []) | all(.command != $cmd))) |
-    .hooks.PreToolUse += ($patterns | map({
-      "if": .,
+    .hooks.PreToolUse += [{
+      "matcher": "Bash",
       "hooks": [{ "type": "command", "command": $cmd }]
-    })) |
+    }] |
     if (.hooks.PreToolUse | length) == 0 then del(.hooks.PreToolUse) else . end
   ' "$SETTINGS" > "$SETTINGS.tmp"
 
@@ -48,6 +51,6 @@ jq \
 jq -e . "$SETTINGS.tmp" > /dev/null
 mv "$SETTINGS.tmp" "$SETTINGS"
 
-PATTERN_COUNT=$(echo "$PATTERNS_JSON" | jq 'length')
-echo "✓ Installed $PATTERN_COUNT Nudge hook(s) into $SETTINGS"
+echo "✓ Installed Nudge hook (matcher: Bash) into $SETTINGS"
+echo "  Active patterns: $PATTERN_COUNT (read from $PATTERNS at hook time)"
 echo "  Backup: $BACKUP"

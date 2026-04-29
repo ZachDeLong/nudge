@@ -1,9 +1,15 @@
 # Nudge — opt-in patterns
 # One Claude Code permission rule per line. Lines starting with # are ignored.
-# After editing this file, run: make sync-patterns
+# The hook re-reads this file on every call, so changes take effect immediately.
+# Run `make sync-patterns` only to refresh the install message.
 #
 # Each pattern below will trigger Nudge's popover instead of Claude's
 # normal terminal prompt. Anything not on this list uses normal flow.
+#
+# Supported forms (Bash only):
+#   Bash(<prefix>:*)  — command starts with <prefix>     e.g. Bash(git push:*)
+#   Bash(*<infix>*)   — command contains <infix>         e.g. Bash(*--force*)
+#   Bash(<exact>)     — command equals <exact>           e.g. Bash(git push)
 
 Bash(git push:*)
 Bash(rm:*)

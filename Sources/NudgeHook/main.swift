@@ -14,6 +14,50 @@ let command = toolInput["command"] as? String ?? ""
 let cwd = inputJSON["cwd"] as? String ?? FileManager.default.currentDirectoryPath
 let sessionId = inputJSON["session_id"] as? String ?? "unknown"
 
+// MARK: - Pattern gate
+//
+// We only popover for Bash commands matching a user-defined pattern in
+// ~/.config/nudge/patterns.txt. Claude Code's `matcher` field filters by tool
+// name only ("Bash"), not by command — so the install script sets matcher to
+// "Bash" and we do the command-level filtering here. Non-matches exit silently
+// so Claude proceeds via its normal flow (auto mode allows; default mode prompts).
+
+guard toolName == "Bash" else { exit(0) }
+
+let patternsURL = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".config/nudge/patterns.txt")
+
+func loadPatterns() -> [String] {
+    guard let raw = try? String(contentsOf: patternsURL, encoding: .utf8) else { return [] }
+    return raw.split(whereSeparator: { $0.isNewline })
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+}
+
+// Each pattern is a Claude Code permission rule. We support:
+//   Bash(<prefix>:*)  → command starts with <prefix>
+//   Bash(*<infix>*)   → command contains <infix>
+//   Bash(<exact>)     → command equals <exact>
+// Non-Bash(...) lines are ignored.
+func commandMatches(_ command: String, patterns: [String]) -> Bool {
+    for pattern in patterns {
+        guard pattern.hasPrefix("Bash(") && pattern.hasSuffix(")") else { continue }
+        let inner = String(pattern.dropFirst(5).dropLast())
+        if inner.hasSuffix(":*") {
+            let prefix = String(inner.dropLast(2))
+            if command.hasPrefix(prefix) { return true }
+        } else if inner.hasPrefix("*") && inner.hasSuffix("*") {
+            let needle = String(inner.dropFirst().dropLast())
+            if !needle.isEmpty && command.contains(needle) { return true }
+        } else {
+            if command == inner { return true }
+        }
+    }
+    return false
+}
+
+guard commandMatches(command, patterns: loadPatterns()) else { exit(0) }
+
 let prompt: [String: Any] = [
     "id": UUID().uuidString,
     "tool": toolName,
