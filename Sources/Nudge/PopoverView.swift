@@ -49,7 +49,7 @@ struct PopoverView: View {
         let hasCommand = !trimmed.isEmpty
 
         if hasCommand {
-            commandBox(for: prompt.command)
+            commandBox(for: prompt)
                 .padding(.bottom, 12)
         } else {
             HStack(spacing: 8) {
@@ -107,15 +107,23 @@ struct PopoverView: View {
     }
 
     @ViewBuilder
-    private func commandBox(for command: String) -> some View {
+    private func commandBox(for prompt: Prompt) -> some View {
         // Cap height so a huge command (long heredoc, big file content, etc.)
         // can't push the popover off-screen — overflow scrolls inside the box.
         ScrollView(.vertical, showsIndicators: true) {
-            Text(highlight(command: command))
-                .font(.system(size: 12, design: .monospaced))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12).padding(.vertical, 10)
-                .textSelection(.enabled)
+            Group {
+                if prompt.tool == "Bash" {
+                    Text(highlight(command: prompt.command))
+                } else {
+                    // Path-based tools (Edit/Write/Read/...): no Bash-specific
+                    // syntax highlighting, just show the path.
+                    Text(prompt.command)
+                }
+            }
+            .font(.system(size: 12, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .textSelection(.enabled)
         }
         .frame(maxHeight: 140)
         .fixedSize(horizontal: false, vertical: false)

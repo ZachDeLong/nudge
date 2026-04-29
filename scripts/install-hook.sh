@@ -28,20 +28,23 @@ cp "$SETTINGS" "$BACKUP"
 # Count active patterns for the success message (skip comments and blanks).
 PATTERN_COUNT=$(grep -v '^[[:space:]]*#' "$PATTERNS" | grep -v '^[[:space:]]*$' | wc -l | tr -d ' ')
 
-# Install one PreToolUse entry with matcher "Bash" — Claude Code's `matcher`
-# field filters by tool name only, so we narrow to Bash here and let the hook
-# binary do the per-command pattern matching against patterns.txt.
+# Install one PreToolUse entry with a tool-name regex matcher — Claude Code's
+# `matcher` field filters by tool name only, so we narrow to the families we
+# know how to handle and let the hook binary do the value-level filtering.
 #
 # 1) Remove any prior Nudge entries (those whose hooks reference HOOK_CMD).
-# 2) Append a single entry that fires on Bash calls.
+# 2) Append a single entry that fires on supported tools.
+MATCHER='Bash|Edit|Write|Read|MultiEdit|NotebookEdit'
+
 jq \
   --arg cmd "$HOOK_CMD" \
+  --arg matcher "$MATCHER" \
   '
     .hooks //= {} |
     .hooks.PreToolUse //= [] |
     .hooks.PreToolUse |= map(select((.hooks // []) | all(.command != $cmd))) |
     .hooks.PreToolUse += [{
-      "matcher": "Bash",
+      "matcher": $matcher,
       "hooks": [{ "type": "command", "command": $cmd }]
     }] |
     if (.hooks.PreToolUse | length) == 0 then del(.hooks.PreToolUse) else . end
@@ -51,6 +54,6 @@ jq \
 jq -e . "$SETTINGS.tmp" > /dev/null
 mv "$SETTINGS.tmp" "$SETTINGS"
 
-echo "✓ Installed Nudge hook (matcher: Bash) into $SETTINGS"
+echo "✓ Installed Nudge hook (matcher: $MATCHER) into $SETTINGS"
 echo "  Active patterns: $PATTERN_COUNT (read from $PATTERNS at hook time)"
 echo "  Backup: $BACKUP"

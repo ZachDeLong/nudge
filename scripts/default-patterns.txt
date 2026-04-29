@@ -6,12 +6,24 @@
 # Each pattern below will trigger Nudge's popover instead of Claude's
 # normal terminal prompt. Anything not on this list uses normal flow.
 #
-# Supported forms (Bash only):
+# Bash:
 #   Bash(<prefix>:*)  — command starts with <prefix>     e.g. Bash(git push:*)
 #   Bash(*<infix>*)   — command contains <infix>         e.g. Bash(*--force*)
 #   Bash(<exact>)     — command equals <exact>           e.g. Bash(git push)
+#
+# File-based tools (Edit, Write, Read, MultiEdit, NotebookEdit) — match on
+# tool_input.file_path with shell-style globs:
+#   *   matches any chars except `/`
+#   **  matches any chars including `/` (recursive)
+#   Edit(/etc/**)             — anywhere under /etc
+#   Write(**/.env*)           — any .env-prefixed file
+#   Edit(/Users/**/.claude/**) — any user's Claude config tree
 
 Bash(git push:*)
 Bash(rm:*)
 Bash(*--force*)
 Bash(*deploy*)
+Edit(/etc/**)
+Write(/etc/**)
+Edit(**/.env*)
+Write(**/.env*)

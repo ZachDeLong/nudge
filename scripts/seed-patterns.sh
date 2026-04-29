@@ -41,16 +41,23 @@ case "$MODE" in
         ;;
 esac
 
-# Import Bash() rules from permissions.ask. We skip non-Bash rules because
-# the hook's matcher is currently "Bash" only — importing Edit(/...)/Write(/...)
-# would silently do nothing until matcher is broadened.
+# Import permission rules from permissions.ask for tool families the hook
+# binary knows how to match: Bash, Edit, Write, Read, MultiEdit, NotebookEdit.
+# Other rules (e.g. mcp__... or unknown tools) are skipped — they wouldn't
+# do anything in patterns.txt today.
 if [[ ! -f "$SETTINGS" ]] || ! command -v jq >/dev/null 2>&1; then
     exit 0
 fi
 
 ASK_BASH=$(jq -r '
     (.permissions.ask // [])
-    | map(select(type == "string" and startswith("Bash(")))
+    | map(select(type == "string"
+        and (startswith("Bash(")
+          or startswith("Edit(")
+          or startswith("Write(")
+          or startswith("Read(")
+          or startswith("MultiEdit(")
+          or startswith("NotebookEdit("))))
     | unique
     | .[]
 ' "$SETTINGS" 2>/dev/null || true)
@@ -80,5 +87,5 @@ fi
     printf "%s" "$NEW_LINES"
 } >> "$PATTERNS_FILE"
 
-COUNT=$(printf "%s" "$NEW_LINES" | grep -c '^Bash(' || true)
+COUNT=$(printf "%s" "$NEW_LINES" | grep -cE '^(Bash|Edit|Write|Read|MultiEdit|NotebookEdit)\(' || true)
 echo "→ Imported $COUNT pattern(s) from $SETTINGS (permissions.ask)"
