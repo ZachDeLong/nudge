@@ -1,0 +1,11 @@
+# Nudge — opt-in patterns
+# One Claude Code permission rule per line. Lines starting with # are ignored.
+# After editing this file, run: make sync-patterns
+#
+# Each pattern below will trigger Nudge's popover instead of Claude's
+# normal terminal prompt. Anything not on this list uses normal flow.
+
+Bash(git push:*)
+Bash(rm:*)
+Bash(*--force*)
+Bash(*deploy*)
