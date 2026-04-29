@@ -38,12 +38,15 @@ final class MenuBarController: NSObject {
     }
 
     private func renderAndShow() {
-        panel.show(content: PopoverView(
-            prompt: currentPrompt,
-            queueDepth: queueDepth,
-            onAllow: { [weak self] in self?.resolve(.allow) },
-            onDeny:  { [weak self] in self?.resolve(.deny) }
-        ))
+        panel.show(
+            content: PopoverView(
+                prompt: currentPrompt,
+                queueDepth: queueDepth,
+                onAllow: { [weak self] in self?.resolve(.allow) },
+                onDeny:  { [weak self] in self?.resolve(.deny) }
+            ),
+            anchorTo: statusItem.button
+        )
     }
 
     private func subscribeToQueue() async {
@@ -148,7 +151,7 @@ final class PromptPanel {
         panel.isMovable = false
     }
 
-    func show(content: PopoverView) {
+    func show(content: PopoverView, anchorTo button: NSStatusBarButton?) {
         hosting.rootView = AnyView(
             content
                 .background(
@@ -157,12 +160,40 @@ final class PromptPanel {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         )
-        positionInTopRight()
+        if !positionUnder(button: button) {
+            positionInTopRight()
+        }
         panel.orderFrontRegardless()
     }
 
     func hide() {
         panel.orderOut(nil)
+    }
+
+    /// Position the panel directly under the menu bar icon. Returns false if the icon
+    /// isn't currently visible (e.g., auto-hide menu bar collapsed, button hidden behind
+    /// active app menus) — caller should fall back to a fixed position.
+    private func positionUnder(button: NSStatusBarButton?) -> Bool {
+        guard let button = button,
+              let buttonWindow = button.window else { return false }
+        let buttonFrame = buttonWindow.frame
+        guard buttonFrame.width > 1, buttonFrame.height > 1 else { return false }
+        guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(buttonFrame) })
+              ?? NSScreen.main else { return false }
+
+        let size = panel.frame.size
+        let buttonCenterX = buttonFrame.midX
+        var originX = buttonCenterX - size.width / 2
+
+        // Clamp to screen so we don't overflow the right edge.
+        let leftEdge = screen.frame.minX + 8
+        let rightEdge = screen.frame.maxX - size.width - 8
+        originX = min(max(originX, leftEdge), rightEdge)
+
+        // Just below the menu bar.
+        let originY = screen.visibleFrame.maxY - size.height - 4
+        panel.setFrameOrigin(NSPoint(x: originX, y: originY))
+        return true
     }
 
     private func positionInTopRight() {
