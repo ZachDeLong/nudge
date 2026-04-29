@@ -6,10 +6,12 @@ final class MenuBarController: NSObject {
     private let queue: PromptQueue
     private let statusItem: NSStatusItem
     private let panel: PromptPanel
+    private let sessionAllow = SessionAllowList()
     private var currentPrompt: Prompt?
     private var queueDepth: Int = 0
     private var pulseTimer: Timer?
     private var keyMonitor: Any?
+    private var clickMonitor: Any?
 
     init(queue: PromptQueue) {
         self.queue = queue
@@ -43,7 +45,9 @@ final class MenuBarController: NSObject {
                 prompt: currentPrompt,
                 queueDepth: queueDepth,
                 onAllow: { [weak self] in self?.resolve(.allow) },
-                onDeny:  { [weak self] in self?.resolve(.deny) }
+                onDeny:  { [weak self] in self?.resolve(.deny) },
+                onAlwaysAllow: { [weak self] in self?.alwaysAllowCurrent() },
+                onSessionAllow: { [weak self] in self?.sessionAllowCurrent() }
             ),
             anchorTo: statusItem.button
         )
@@ -58,6 +62,12 @@ final class MenuBarController: NSObject {
     }
 
     private func handleHead(prompt: Prompt?, depth: Int) {
+        // Auto-resolve via session allow list before any UI.
+        if let prompt = prompt, sessionAllow.contains(command: prompt.command) {
+            Task { await queue.resolveHead(with: .allow) }
+            return
+        }
+
         self.currentPrompt = prompt
         self.queueDepth = depth
 
@@ -69,16 +79,39 @@ final class MenuBarController: NSObject {
         if prompt != nil {
             startPulse()
             startKeyMonitor()
+            startClickMonitor()
             renderAndShow()
         } else {
             stopPulse()
             stopKeyMonitor()
+            stopClickMonitor()
             panel.hide()
         }
     }
 
+    // MARK: - Decision handlers
+
     private func resolve(_ decision: Decision) {
         Task { await queue.resolveHead(with: decision) }
+    }
+
+    private func alwaysAllowCurrent() {
+        guard let prompt = currentPrompt else { return }
+        do {
+            _ = try PersistentAllowList.add(command: prompt.command)
+        } catch {
+            NSLog("Nudge: failed to write Always Allow: \(error)")
+        }
+        // Also session-allow so this current session benefits immediately
+        // (Claude Code may cache settings.json at session start).
+        sessionAllow.add(command: prompt.command)
+        resolve(.allow)
+    }
+
+    private func sessionAllowCurrent() {
+        guard let prompt = currentPrompt else { return }
+        sessionAllow.add(command: prompt.command)
+        resolve(.allow)
     }
 
     // MARK: - Pulse
@@ -116,19 +149,38 @@ final class MenuBarController: NSObject {
     private func stopKeyMonitor() {
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
     }
+
+    // MARK: - Click-outside-to-deny
+
+    private func startClickMonitor() {
+        stopClickMonitor()
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self = self, self.panel.isVisible else { return }
+            // If the click is outside the panel, deny.
+            let panelFrame = self.panel.windowFrame
+            let mouseLocation = NSEvent.mouseLocation
+            // Also ignore clicks on the menu bar icon itself.
+            let buttonScreenFrame = self.statusItem.button?.window?.frame ?? .zero
+            if !panelFrame.contains(mouseLocation) && !buttonScreenFrame.contains(mouseLocation) {
+                DispatchQueue.main.async { self.resolve(.deny) }
+            }
+        }
+    }
+
+    private func stopClickMonitor() {
+        if let m = clickMonitor { NSEvent.removeMonitor(m); clickMonitor = nil }
+    }
 }
 
 // MARK: - PromptPanel
 
-/// A floating panel that always appears in the top-right corner of the active screen.
-/// Doesn't anchor to the menu bar icon — solves the "popover appears in random places"
-/// issue when the menu bar icon is hidden behind active app menus.
 @MainActor
 final class PromptPanel {
     private let panel: NSPanel
     private let hosting: NSHostingController<AnyView>
 
     var isVisible: Bool { panel.isVisible }
+    var windowFrame: NSRect { panel.frame }
 
     init() {
         self.hosting = NSHostingController(rootView: AnyView(EmptyView()))
@@ -154,56 +206,75 @@ final class PromptPanel {
     func show(content: PopoverView, anchorTo button: NSStatusBarButton?) {
         hosting.rootView = AnyView(
             content
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(.clear)
-                )
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         )
-        if !positionUnder(button: button) {
-            positionInTopRight()
-        }
+
+        let finalOrigin = computeOrigin(anchorTo: button)
+        // Slide-in: start 18px above and at 0 alpha, animate to final.
+        var startOrigin = finalOrigin
+        startOrigin.y += 18
+        panel.alphaValue = 0
+        panel.setFrameOrigin(startOrigin)
         panel.orderFrontRegardless()
+
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.16
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+            panel.animator().setFrameOrigin(finalOrigin)
+        })
     }
 
     func hide() {
-        panel.orderOut(nil)
+        guard panel.isVisible else { return }
+        let currentOrigin = panel.frame.origin
+        var endOrigin = currentOrigin
+        endOrigin.y += 12
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.12
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().alphaValue = 0
+            panel.animator().setFrameOrigin(endOrigin)
+        }, completionHandler: { [weak self] in
+            self?.panel.orderOut(nil)
+            self?.panel.alphaValue = 1
+        })
     }
 
-    /// Position the panel directly under the menu bar icon. Returns false if the icon
-    /// isn't currently visible (e.g., auto-hide menu bar collapsed, button hidden behind
-    /// active app menus) — caller should fall back to a fixed position.
-    private func positionUnder(button: NSStatusBarButton?) -> Bool {
+    // MARK: - Positioning
+
+    private func computeOrigin(anchorTo button: NSStatusBarButton?) -> NSPoint {
+        if let pt = originUnder(button: button) { return pt }
+        return originTopRight()
+    }
+
+    private func originUnder(button: NSStatusBarButton?) -> NSPoint? {
         guard let button = button,
-              let buttonWindow = button.window else { return false }
+              let buttonWindow = button.window else { return nil }
         let buttonFrame = buttonWindow.frame
-        guard buttonFrame.width > 1, buttonFrame.height > 1 else { return false }
+        guard buttonFrame.width > 1, buttonFrame.height > 1 else { return nil }
         guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(buttonFrame) })
-              ?? NSScreen.main else { return false }
+              ?? NSScreen.main else { return nil }
 
         let size = panel.frame.size
         let buttonCenterX = buttonFrame.midX
         var originX = buttonCenterX - size.width / 2
 
-        // Clamp to screen so we don't overflow the right edge.
         let leftEdge = screen.frame.minX + 8
         let rightEdge = screen.frame.maxX - size.width - 8
         originX = min(max(originX, leftEdge), rightEdge)
 
-        // Just below the menu bar.
         let originY = screen.visibleFrame.maxY - size.height - 4
-        panel.setFrameOrigin(NSPoint(x: originX, y: originY))
-        return true
+        return NSPoint(x: originX, y: originY)
     }
 
-    private func positionInTopRight() {
+    private func originTopRight() -> NSPoint {
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
-              ?? NSScreen.main else { return }
+              ?? NSScreen.main else { return .zero }
         let visible = screen.visibleFrame
         let size = panel.frame.size
         let margin: CGFloat = 12
-        let originX = visible.maxX - size.width - margin
-        let originY = visible.maxY - size.height - margin
-        panel.setFrameOrigin(NSPoint(x: originX, y: originY))
+        return NSPoint(x: visible.maxX - size.width - margin,
+                       y: visible.maxY - size.height - margin)
     }
 }

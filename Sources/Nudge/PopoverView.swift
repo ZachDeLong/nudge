@@ -6,6 +6,8 @@ struct PopoverView: View {
     let queueDepth: Int
     let onAllow: () -> Void
     let onDeny: () -> Void
+    let onAlwaysAllow: () -> Void
+    let onSessionAllow: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,14 +45,8 @@ struct PopoverView: View {
         }
         .padding(.bottom, 12)
 
-        Text(prompt.command)
-            .font(.system(size: 12, design: .monospaced))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(Color.black.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+        commandBox(for: prompt.command)
             .padding(.bottom, 14)
-            .textSelection(.enabled)
 
         HStack(spacing: 8) {
             Button(action: onDeny) { Text("Deny").frame(maxWidth: .infinity) }
@@ -58,11 +54,65 @@ struct PopoverView: View {
                 .controlSize(.large)
                 .keyboardShortcut(.cancelAction)
 
-            Button(action: onAllow) { Text("Allow").frame(maxWidth: .infinity) }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .keyboardShortcut(.defaultAction)
+            Menu {
+                Button("Always allow this command", action: onAlwaysAllow)
+                Button("Allow for this session", action: onSessionAllow)
+            } label: {
+                Text("Allow")
+                    .frame(maxWidth: .infinity)
+            } primaryAction: {
+                onAllow()
+            }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
         }
+    }
+
+    /// Renders the command with destructive tokens highlighted in red.
+    @ViewBuilder
+    private func commandBox(for command: String) -> some View {
+        Text(highlight(command: command))
+            .font(.system(size: 12, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(Color.black.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .textSelection(.enabled)
+    }
+
+    /// Token-by-token highlighter. Marks --force, --hard, -rf etc. as destructive,
+    /// and main/master branches when the command is a push.
+    private func highlight(command: String) -> AttributedString {
+        var result = AttributedString()
+        let tokens = command.split(separator: " ", omittingEmptySubsequences: false)
+        let isPush = command.contains("git push")
+        let isReset = command.contains("git reset") || command.contains("git rebase")
+
+        let alwaysDangerous: Set<String> = [
+            "--force", "-f", "-rf", "-fr", "-Rf", "-fR", "--hard",
+            "--no-verify", "--force-with-lease",
+        ]
+        let dangerousBranches: Set<String> = ["main", "master", "production", "prod", "release"]
+
+        for (i, raw) in tokens.enumerated() {
+            let token = String(raw)
+            var attr = AttributedString(token)
+
+            let isFlag = alwaysDangerous.contains(token) || token.hasPrefix("-rf") || token.hasPrefix("-fr")
+            let isDangerousBranch = (isPush || isReset) && dangerousBranches.contains(token)
+
+            if isFlag || isDangerousBranch {
+                attr.foregroundColor = .red
+                attr.font = .system(size: 12, weight: .semibold, design: .monospaced)
+            }
+            result += attr
+            if i < tokens.count - 1 {
+                result += AttributedString(" ")
+            }
+        }
+        return result
     }
 
     @ViewBuilder
