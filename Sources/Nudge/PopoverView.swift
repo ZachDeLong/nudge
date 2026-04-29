@@ -108,13 +108,19 @@ struct PopoverView: View {
 
     @ViewBuilder
     private func commandBox(for command: String) -> some View {
-        Text(highlight(command: command))
-            .font(.system(size: 12, design: .monospaced))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(Color.primary.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .textSelection(.enabled)
+        // Cap height so a huge command (long heredoc, big file content, etc.)
+        // can't push the popover off-screen — overflow scrolls inside the box.
+        ScrollView(.vertical, showsIndicators: true) {
+            Text(highlight(command: command))
+                .font(.system(size: 12, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .textSelection(.enabled)
+        }
+        .frame(maxHeight: 140)
+        .fixedSize(horizontal: false, vertical: false)
+        .background(Color.primary.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     /// True when the matched pattern is a Claude-compatible permission rule
