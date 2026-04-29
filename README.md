@@ -78,6 +78,8 @@ Edit(/Users/**/.claude/**)  # any user's claude config
 
 `*` matches a single path segment; `**` matches across slashes. Bash supports prefix (`x:*`), infix (`*x*`), and exact match.
 
+Chained Bash calls match too. The hook tokenizes the command on `&&`, `||`, `;`, `|`, and `&` (respecting quotes and `$(...)`), then checks each segment. So `Bash(git push:*)` fires on a real-world `cd ~/repo && git add . && git commit -m '…' && git push`, which is how agents (and humans) actually push.
+
 When you install, Nudge also imports `Bash()`-style rules from your existing `permissions.ask` array in `~/.claude/settings.json`. So if you've already told Claude Code to ask about `git push:*`, Nudge picks that up automatically. Run `make import-permissions` later to merge in new ones.
 
 ## "Always allow"

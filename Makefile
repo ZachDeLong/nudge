@@ -1,4 +1,4 @@
-.PHONY: build clean run install uninstall sync-patterns import-permissions test-popup
+.PHONY: build clean run install uninstall sync-patterns import-permissions test test-popup
 
 CONFIG ?= release
 BUILD_DIR := .build/$(CONFIG)
@@ -50,6 +50,13 @@ sync-patterns:
 import-permissions:
 	./scripts/seed-patterns.sh --merge
 	@echo "✓ Patterns merged. Active list: $(PATTERNS_FILE)"
+
+# Builds + runs the matching test suite (bash command splitter and pattern
+# matcher). Plain Swift assertions, no XCTest — runs without full Xcode.
+# Use `swift test` for the XCTest suite (requires Xcode) when available.
+test:
+	swift build --product nudge-test-matching -c $(CONFIG)
+	$(BUILD_DIR)/nudge-test-matching
 
 # Fires a test prompt directly at Nudge's HTTP server (bypasses Claude Code).
 # Usage: make test-popup            (default: git push --force, default mode)
