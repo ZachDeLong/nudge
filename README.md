@@ -50,7 +50,9 @@ cd nudge
 open -ga Nudge
 ```
 
-Requirements: macOS 14+ and `jq` (the hook installer reads and rewrites `~/.claude/settings.json`). Source builds also need Xcode Command Line Tools (no full Xcode required). Install jq with `brew install jq`.
+Requirements: macOS 14+ and `jq` (the hook installer reads and rewrites `~/.claude/settings.json`). Source builds also need Xcode Command Line Tools (no full Xcode required). Install jq with `brew install jq`. The chat-mirror feature also needs `tmux` (`brew install tmux`).
+
+`make install` also symlinks `nudge-claude` into a writable directory in your PATH (it tries `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, then `~/bin`), so you can just run `nudge-claude` from anywhere.
 
 ## How it works
 
@@ -151,15 +153,40 @@ Either way, pre-allowing the `Bash(...:*)` rule keeps Claude from prompting befo
 
 ## Agent sessions
 
-`nudge-claude` starts Claude Code inside a named tmux session and attaches your terminal to it:
+`nudge-claude` starts Claude Code inside a named tmux session and attaches your terminal to it. The session keeps running if you close the terminal, so you can re-attach later or chat from the Nudge popover.
 
 ```sh
-/Applications/Nudge.app/Contents/MacOS/nudge-claude
+nudge-claude              # start a new session in the current directory
+nudge-claude attach       # re-attach to the most recent session
+nudge-claude attach <id>  # attach to a specific session (id from `list`)
+nudge-claude list         # list active sessions
+nudge-claude --help       # show help
 ```
 
-Once it is running, click the Nudge menu bar icon with no permission prompt active. The idle panel shows mirrored agent sessions, recent terminal output, and a reply box. Messages sent there are forwarded to the same tmux pane via `tmux send-keys`, so the terminal Claude session keeps its cwd, project context, skills, plugins, MCPs, and hooks.
+(If `nudge-claude` isn't on your PATH, run `/Applications/Nudge.app/Contents/MacOS/nudge-claude` or re-run `make install` to create the symlink.)
 
-Requirements for this experimental mode: `tmux` and the `claude` CLI on your `PATH`. Install tmux with `brew install tmux`. Nudge checks the usual Homebrew tmux paths when the menu bar app is launched without your shell `PATH`; set `NUDGE_TMUX_PATH` if tmux lives somewhere custom.
+Detach from a session without stopping it: `Ctrl-b` then `d` (the standard tmux detach binding). Claude keeps thinking; you can re-attach or chat via the menu bar.
+
+### Mirroring in the menu bar
+
+Click the Nudge menu bar icon with no permission prompt active. The idle panel shows a session picker, the recent transcript, and a reply box.
+
+![Agent sessions popover](./docs/img/agent-sessions.png)
+
+
+- **Picker** switches between active sessions. Labels show `kind · project · time` or whatever you've named them.
+- **Pencil (✏️)** renames a session. The name is saved to `~/.config/nudge/sessions/<id>.json`.
+- **Stop (⏹)** kills the tmux pane and removes the session record.
+- **Refresh (↻)** pulls the latest transcript. The panel also polls every 1.5s while open.
+- **Send** with Enter. Shift+Enter inserts a newline.
+
+Messages are forwarded to the tmux pane via `tmux send-keys`, so the terminal Claude session keeps its cwd, project context, skills, plugins, MCPs, and hooks.
+
+### Requirements & threat model
+
+Needs `tmux` and the `claude` CLI on your `PATH`. Install tmux with `brew install tmux`. Nudge checks the usual Homebrew tmux paths when the menu bar app is launched without your shell `PATH`; set `NUDGE_TMUX_PATH` if tmux lives somewhere custom.
+
+Session metadata at `~/.config/nudge/sessions/*.json` is owner-only (`0o600`) and validated on read. Nudge refuses to load a planted JSON from another local user. Messages sent through the chat input have C0 control bytes stripped before reaching tmux, so a chat message can't deliver terminal escape sequences to the pane.
 
 ## Known limits
 

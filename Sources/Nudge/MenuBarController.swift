@@ -23,8 +23,7 @@ final class MenuBarController: NSObject {
     private var queueDepth: Int = 0
     private var pulseTimer: Timer?
     private var agentRefreshTimer: Timer?
-    private var agentRefreshTask: Task<Void, Never>?
-    private var agentRefreshInFlight = false
+    private var agentRefreshSequence: Int = 0
     private var keyMonitor: Any?
     private var clickMonitor: Any?
     private var settings: Prefs = .load()
@@ -271,7 +270,7 @@ final class MenuBarController: NSObject {
         stopAgentRefresh()
         agentRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.refreshAgentSessions(selecting: self?.agentChat.detail?.id, isPolling: true)
+                self?.refreshAgentSessions(selecting: self?.agentChat.detail?.id)
             }
         }
     }
@@ -419,25 +418,20 @@ final class MenuBarController: NSObject {
 
     // MARK: - Agent sessions
 
-    /// User-initiated refreshes (button clicks, picker selection, end, rename)
-    /// cancel any in-flight refresh so they win the race against polling.
-    /// Polling refreshes (`isPolling: true`) skip if a refresh is already
-    /// running — otherwise back-to-back polling ticks could keep cancelling
-    /// each other on a slow tmux capture and the store would never update.
+    /// Bumps a sequence number on entry; only the latest refresh writes to the
+    /// store. That avoids the in-flight-flag race we had before (where a
+    /// polling tick's flag wouldn't clear in time, blocking subsequent polls)
+    /// and the cancel race (where a slow capture got cancelled by the next
+    /// poll and never wrote anything). Multiple refreshes can be in flight
+    /// simultaneously; only the most-recent one's result lands.
     ///
-    /// Failure handling is intentionally conservative: a transient
-    /// `backend.detail` error (which happens for a few hundred ms after tmux
-    /// state changes — kill, rename, etc.) shouldn't blank the chat UI. We
-    /// keep the prior detail in place and let the next successful refresh
-    /// replace it.
-    private func refreshAgentSessions(selecting sessionID: String? = nil, isPolling: Bool = false) {
-        if isPolling {
-            if agentRefreshInFlight { return }
-        } else {
-            agentRefreshTask?.cancel()
-        }
-        agentRefreshInFlight = true
-        agentRefreshTask = Task { [weak self] in
+    /// Failure handling stays conservative: a transient `backend.detail`
+    /// error shouldn't blank the chat UI. Keep the prior detail and let the
+    /// next successful refresh replace it.
+    private func refreshAgentSessions(selecting sessionID: String? = nil) {
+        agentRefreshSequence += 1
+        let mySeq = agentRefreshSequence
+        Task { [weak self] in
             let result = await Task.detached { () async -> Result<([AgentSessionSummary], AgentSessionDetail?), Error> in
                 do {
                     let backend = TmuxAgentBackend()
@@ -446,8 +440,6 @@ final class MenuBarController: NSObject {
                         ?? sessions.first
                     var detail: AgentSessionDetail? = nil
                     if let selected {
-                        // Soft-fail on detail: a transient capture-pane miss
-                        // shouldn't propagate up as a full-failure.
                         detail = try? backend.detail(for: selected)
                     }
                     return .success((sessions, detail))
@@ -456,29 +448,20 @@ final class MenuBarController: NSObject {
                 }
             }.value
 
-            if Task.isCancelled {
-                await MainActor.run { self?.agentRefreshInFlight = false }
-                return
-            }
             await MainActor.run {
                 guard let self else { return }
-                self.agentRefreshInFlight = false
+                // A newer refresh has started since we kicked off; let it win.
+                guard mySeq == self.agentRefreshSequence else { return }
                 switch result {
                 case .success(let payload):
                     self.agentChat.sessions = payload.0
-                    // Only overwrite detail when we actually have one. Keeping
-                    // the prior detail prevents the transcript from blanking
-                    // mid-rename or mid-end while the next poll catches up.
                     if let detail = payload.1 {
                         self.agentChat.detail = detail
                     } else if !payload.0.contains(where: { $0.id == self.agentChat.detail?.id }) {
-                        // Selected session is no longer in the list; clear it.
                         self.agentChat.detail = nil
                     }
                     self.agentChat.error = nil
                 case .failure(let error):
-                    // listSessions itself failed (rare). Keep the stale UI;
-                    // surface the error so the user can see what happened.
                     self.agentChat.error = String(describing: error)
                 }
             }
