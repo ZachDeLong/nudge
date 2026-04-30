@@ -38,8 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func bringUpServer(port: UInt16) async throws {
-        let token = try TokenFile.readOrCreate()
-        let server = PromptServer(queue: queue, port: port, authToken: token)
+        _ = try TokenFile.ensure()
+        let server = PromptServer(queue: queue, port: port)
         try await server.start()
         let bound = await server.boundPort
         try PortFile.write(port: bound)

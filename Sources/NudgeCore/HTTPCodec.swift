@@ -43,11 +43,14 @@ public enum HTTPCodec {
             headers[key] = val
         }
         let bodyStart = headerEnd + 4
-        let contentLength = Int(headers["Content-Length"] ?? "0") ?? 0
-        guard bytes.count >= bodyStart + contentLength else {
+        let parsedLength = Int(headers["Content-Length"] ?? "0") ?? 0
+        guard parsedLength >= 0 else {
+            throw ParseError.malformed
+        }
+        guard bytes.count >= bodyStart + parsedLength else {
             throw ParseError.needMoreData
         }
-        let body = Array(bytes[bodyStart..<bodyStart + contentLength])
+        let body = Array(bytes[bodyStart..<bodyStart + parsedLength])
         return Request(method: parts[0], path: parts[1], headers: headers, body: body)
     }
 

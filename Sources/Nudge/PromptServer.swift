@@ -8,13 +8,13 @@ actor PromptServer {
     private var listener: NWListener?
     private(set) var boundPort: UInt16 = 0
     private let timeoutSeconds: TimeInterval
-    private let authToken: String
+    private let tokenURL: URL
 
-    init(queue: PromptQueue, port: UInt16, authToken: String, timeoutSeconds: TimeInterval = 300) {
+    init(queue: PromptQueue, port: UInt16, tokenURL: URL = TokenFile.defaultURL, timeoutSeconds: TimeInterval = 300) {
         self.queue = queue
         self.requestedPort = port == 0 ? .any : NWEndpoint.Port(rawValue: port)!
         self.timeoutSeconds = timeoutSeconds
-        self.authToken = authToken
+        self.tokenURL = tokenURL
     }
 
     func start() async throws {
@@ -100,9 +100,6 @@ actor PromptServer {
             await sendAndAwait(Data(resp), on: conn)
             return
         }
-        // /prompt and /ask use the same Prompt body shape — the `kind` field
-        // discriminates. We accept both endpoints to keep the URL paths
-        // self-documenting (the CLI binaries hit different paths).
         guard isAuthorized(req) else {
             let resp = HTTPCodec.writeResponse(status: 401, contentType: "text/plain", body: Array("unauthorized".utf8))
             await sendAndAwait(Data(resp), on: conn)
@@ -127,12 +124,22 @@ actor PromptServer {
         }
     }
 
+    /// Re-reads the token on every request so a rotation on disk takes effect
+    /// without restarting the server. Compares the bearer value byte-by-byte
+    /// to avoid leaking length-prefix-match timing information.
     private func isAuthorized(_ req: HTTPCodec.Request) -> Bool {
         guard let header = req.headers.first(where: {
             $0.key.caseInsensitiveCompare("Authorization") == .orderedSame
         })?.value else {
             return false
         }
-        return header == "Bearer \(authToken)"
+        guard let token = try? TokenFile.read(from: tokenURL) else { return false }
+        let expected = "Bearer \(token)"
+        let a = Array(header.utf8)
+        let b = Array(expected.utf8)
+        guard a.count == b.count else { return false }
+        var diff: UInt8 = 0
+        for i in 0..<a.count { diff |= a[i] ^ b[i] }
+        return diff == 0
     }
 }

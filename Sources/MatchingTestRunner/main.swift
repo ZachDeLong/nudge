@@ -1,10 +1,11 @@
-// Command-line runner for NudgeHookCore matching tests.
+// Command-line runner for NudgeHookCore matching tests + NudgeCore token tests.
 //
 // Plain Swift assertions so this works on machines with only Command Line
 // Tools (no XCTest). Run via `make test`. Build via `swift build --product
 // nudge-test-matching`.
 
 import Foundation
+import NudgeCore
 import NudgeHookCore
 
 var failures: [String] = []
@@ -322,6 +323,91 @@ expect(
     "Bash(git push:*)",
     "match: quoted operator doesn't fool the splitter"
 )
+
+// MARK: TokenFile — exercises the public surface (ensure / read)
+
+func tempTokenURL() -> URL {
+    URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("nudge-token-\(UUID().uuidString)")
+}
+
+do {
+    let url = tempTokenURL()
+    defer { try? FileManager.default.removeItem(at: url) }
+    let token = try TokenFile.ensure(at: url)
+    let read = try TokenFile.read(from: url)
+    expect(read, token, "token: ensure+read round-trip")
+    expect(token.count, 64, "token: ensure produces 64-char hex")
+}
+
+do {
+    let url = tempTokenURL()
+    do {
+        _ = try TokenFile.read(from: url)
+        failures.append("✗ token: read on missing path should throw")
+    } catch TokenFile.FileError.missing {
+        passed += 1
+    } catch {
+        failures.append("✗ token: read on missing path threw \(error), expected .missing")
+    }
+}
+
+do {
+    let url = tempTokenURL()
+    defer { try? FileManager.default.removeItem(at: url) }
+    try "not-a-valid-token\n".write(to: url, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    do {
+        _ = try TokenFile.read(from: url)
+        failures.append("✗ token: read on malformed content should throw")
+    } catch TokenFile.FileError.malformed {
+        passed += 1
+    } catch {
+        failures.append("✗ token: read on malformed content threw \(error), expected .malformed")
+    }
+}
+
+do {
+    let urlA = tempTokenURL()
+    let urlB = tempTokenURL()
+    defer { try? FileManager.default.removeItem(at: urlA) }
+    defer { try? FileManager.default.removeItem(at: urlB) }
+    let a = try TokenFile.ensure(at: urlA)
+    let b = try TokenFile.ensure(at: urlB)
+    if a != b { passed += 1 } else { failures.append("✗ token: ensure on two paths must produce unique tokens") }
+}
+
+do {
+    let url = tempTokenURL()
+    defer { try? FileManager.default.removeItem(at: url) }
+    let first = try TokenFile.ensure(at: url)
+    let second = try TokenFile.ensure(at: url)
+    expect(first, second, "token: ensure() is idempotent on same path")
+}
+
+do {
+    let url = tempTokenURL()
+    defer { try? FileManager.default.removeItem(at: url) }
+    _ = try TokenFile.ensure(at: url)
+    let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+    let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
+    expect(perms, 0o600, "token: ensure produces 0o600 file")
+}
+
+do {
+    let url = tempTokenURL()
+    defer { try? FileManager.default.removeItem(at: url) }
+    try String(repeating: "c", count: 64).write(to: url, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+    do {
+        _ = try TokenFile.read(from: url)
+        failures.append("✗ token: read on world-readable file should throw")
+    } catch TokenFile.FileError.permsTooBroad {
+        passed += 1
+    } catch {
+        failures.append("✗ token: read on world-readable file threw \(error), expected .permsTooBroad")
+    }
+}
 
 // MARK: report
 

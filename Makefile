@@ -51,9 +51,14 @@ import-permissions:
 	./scripts/seed-patterns.sh --merge
 	@echo "✓ Patterns merged. Active list: $(PATTERNS_FILE)"
 
-# Runs XCTest coverage for NudgeCore plus the standalone matching suite.
+# XCTest needs full Xcode (not Command Line Tools), so skip it gracefully on
+# CLT-only machines. The matching+token suite always runs.
 test:
-	swift test -c $(CONFIG)
+	@if xcrun --find xctest >/dev/null 2>&1; then \
+		swift test -c $(CONFIG); \
+	else \
+		echo "(skipping swift test — install full Xcode to run XCTest coverage)"; \
+	fi
 	swift build --product nudge-test-matching -c $(CONFIG)
 	$(BUILD_DIR)/nudge-test-matching
 

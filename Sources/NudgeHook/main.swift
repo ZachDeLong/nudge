@@ -83,9 +83,24 @@ guard let port = NudgeClient.locatePort() else {
 
 // MARK: - POST and wait
 
-guard let decision = try? NudgeClient.postPrompt(prompt, to: "/prompt", port: port),
-      decision.decision == .allow || decision.decision == .deny else {
-    exit(0) // Anything goes wrong, fall back.
+let decision: DecisionResponse
+do {
+    decision = try NudgeClient.postPrompt(prompt, to: "/prompt", port: port)
+} catch NudgeClientError.unauthorized {
+    // Token mismatch — surface to stderr so it shows up in Console.app and
+    // Claude's hook log. Silent fallback would mean the user has no idea why
+    // their popovers stopped working.
+    fputs("nudge-hook: auth failed (token mismatch). Try restarting Nudge.\n", stderr)
+    exit(0)
+} catch NudgeClientError.tokenMissing {
+    fputs("nudge-hook: token file missing or invalid. Try restarting Nudge.\n", stderr)
+    exit(0)
+} catch {
+    exit(0) // Anything else: fall back silently to Claude's normal flow.
+}
+
+guard decision.decision == .allow || decision.decision == .deny else {
+    exit(0)
 }
 
 // MARK: - Write Claude Code hook output

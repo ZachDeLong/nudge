@@ -57,6 +57,12 @@ do {
 } catch NudgeClientError.requestTimedOut {
     fputs("nudge-ask: timed out\n", stderr)
     exit(124)
+} catch NudgeClientError.unauthorized {
+    fputs("nudge-ask: auth failed (token mismatch). Try restarting Nudge.\n", stderr)
+    exit(1)
+} catch NudgeClientError.tokenMissing {
+    fputs("nudge-ask: token file missing or invalid. Try restarting Nudge.\n", stderr)
+    exit(1)
 } catch NudgeClientError.unexpectedStatus(let status) {
     fputs("nudge-ask: unexpected status \(status)\n", stderr)
     exit(1)

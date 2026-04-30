@@ -36,7 +36,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "MatchingTestRunner",
-            dependencies: ["NudgeHookCore"],
+            dependencies: ["NudgeHookCore", "NudgeCore"],
             path: "Sources/MatchingTestRunner"
         ),
         .testTarget(
