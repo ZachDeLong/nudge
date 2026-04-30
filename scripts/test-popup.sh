@@ -13,6 +13,7 @@
 set -euo pipefail
 
 PORT_FILE="$HOME/.config/nudge/port"
+TOKEN_FILE="$HOME/.config/nudge/token"
 COMMAND="${1:-git push --force origin main}"
 TOOL="${2:-Bash}"
 MODE="${3:-default}"
@@ -20,12 +21,17 @@ MODE="${3:-default}"
 # Empty string → no match info → ⋯ menu hidden (mirrors infix matches in real life).
 PATTERN="${4:-Bash(git push:*)}"
 
+if ! command -v jq >/dev/null 2>&1; then
+    echo "jq is required but not installed. Install with: brew install jq" >&2
+    exit 1
+fi
+
 # Auto-launch Nudge if it's not running, then wait for the port file.
 if ! pgrep -x Nudge > /dev/null; then
     echo "→ Nudge not running, launching…"
     open -ga Nudge
     for _ in $(seq 1 20); do
-        [[ -f "$PORT_FILE" ]] && break
+        [[ -f "$PORT_FILE" && -f "$TOKEN_FILE" ]] && break
         sleep 0.1
     done
 fi
@@ -35,7 +41,17 @@ if [[ ! -f "$PORT_FILE" ]]; then
     exit 1
 fi
 
+if [[ ! -f "$TOKEN_FILE" ]]; then
+    echo "Nudge token file not found at $TOKEN_FILE - is Nudge running?" >&2
+    exit 1
+fi
+
 PORT=$(cat "$PORT_FILE")
+TOKEN=$(tr -d '[:space:]' < "$TOKEN_FILE")
+if [[ -z "$TOKEN" ]]; then
+    echo "Nudge token file is empty: $TOKEN_FILE" >&2
+    exit 1
+fi
 ID="test-$(date +%s)-$$"
 CWD="${PWD}"
 SESSION="test-session"
@@ -55,6 +71,7 @@ echo "  tool=$TOOL  mode=$MODE  pattern=${PATTERN:-<none>}  command=$(jq -r .com
 echo "  (waiting for click — Nudge popover should be open)"
 
 RESPONSE=$(curl -sS -X POST -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $TOKEN" \
     --data "$BODY" \
     "http://127.0.0.1:$PORT/prompt")
 

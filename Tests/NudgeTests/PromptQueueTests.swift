@@ -1,5 +1,5 @@
 import XCTest
-@testable import Nudge
+@testable import NudgeCore
 
 final class PromptQueueTests: XCTestCase {
     func testEnqueueAndResolveAllow() async throws {
@@ -10,7 +10,7 @@ final class PromptQueueTests: XCTestCase {
         try await Task.sleep(nanoseconds: 20_000_000)
         await queue.resolveHead(with: .allow)
         let result = try await task.value
-        XCTAssertEqual(result, .allow)
+        XCTAssertEqual(result.decision, .allow)
     }
 
     func testFIFOOrdering() async throws {
@@ -25,11 +25,11 @@ final class PromptQueueTests: XCTestCase {
 
         await queue.resolveHead(with: .allow)
         let r1 = try await t1.value
-        XCTAssertEqual(r1, .allow)
+        XCTAssertEqual(r1.decision, .allow)
 
         await queue.resolveHead(with: .deny)
         let r2 = try await t2.value
-        XCTAssertEqual(r2, .deny)
+        XCTAssertEqual(r2.decision, .deny)
     }
 
     func testEnqueueWithTimeoutFires() async throws {

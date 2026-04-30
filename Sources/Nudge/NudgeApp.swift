@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import NudgeCore
 
 @main
 struct NudgeApp: App {
@@ -37,7 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func bringUpServer(port: UInt16) async throws {
-        let server = PromptServer(queue: queue, port: port)
+        let token = try TokenFile.readOrCreate()
+        let server = PromptServer(queue: queue, port: port, authToken: token)
         try await server.start()
         let bound = await server.boundPort
         try PortFile.write(port: bound)

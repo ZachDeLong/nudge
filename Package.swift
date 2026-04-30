@@ -11,8 +11,13 @@ let package = Package(
         .executable(name: "nudge-test-matching", targets: ["MatchingTestRunner"]),
     ],
     targets: [
+        .target(
+            name: "NudgeCore",
+            path: "Sources/NudgeCore"
+        ),
         .executableTarget(
             name: "Nudge",
+            dependencies: ["NudgeCore"],
             path: "Sources/Nudge"
         ),
         .target(
@@ -21,17 +26,23 @@ let package = Package(
         ),
         .executableTarget(
             name: "NudgeHook",
-            dependencies: ["NudgeHookCore"],
+            dependencies: ["NudgeCore", "NudgeHookCore"],
             path: "Sources/NudgeHook"
         ),
         .executableTarget(
             name: "NudgeAsk",
+            dependencies: ["NudgeCore"],
             path: "Sources/NudgeAsk"
         ),
         .executableTarget(
             name: "MatchingTestRunner",
             dependencies: ["NudgeHookCore"],
             path: "Sources/MatchingTestRunner"
+        ),
+        .testTarget(
+            name: "NudgeTests",
+            dependencies: ["NudgeCore"],
+            path: "Tests/NudgeTests"
         ),
     ]
 )

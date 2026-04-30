@@ -1,5 +1,5 @@
 import XCTest
-@testable import Nudge
+@testable import NudgeCore
 
 final class PortFileTests: XCTestCase {
     func testWriteAndReadRoundTrip() throws {

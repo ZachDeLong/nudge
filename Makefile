@@ -51,10 +51,9 @@ import-permissions:
 	./scripts/seed-patterns.sh --merge
 	@echo "✓ Patterns merged. Active list: $(PATTERNS_FILE)"
 
-# Builds + runs the matching test suite (bash command splitter and pattern
-# matcher). Plain Swift assertions, no XCTest — runs without full Xcode.
-# Use `swift test` for the XCTest suite (requires Xcode) when available.
+# Runs XCTest coverage for NudgeCore plus the standalone matching suite.
 test:
+	swift test -c $(CONFIG)
 	swift build --product nudge-test-matching -c $(CONFIG)
 	$(BUILD_DIR)/nudge-test-matching
 
@@ -69,6 +68,6 @@ test-popup:
 uninstall:
 	-pkill -x Nudge 2>/dev/null || true
 	rm -rf $(APP_DEST)
-	rm -f $(HOME)/.config/nudge/port
+	rm -f $(HOME)/.config/nudge/port $(HOME)/.config/nudge/token
 	./scripts/uninstall-hook.sh
 	@echo "✓ Nudge uninstalled."

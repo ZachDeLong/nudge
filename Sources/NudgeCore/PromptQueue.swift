@@ -1,6 +1,6 @@
 import Foundation
 
-actor PromptQueue {
+public actor PromptQueue {
     private struct Pending {
         let prompt: Prompt
         let continuation: CheckedContinuation<DecisionResponse, Error>
@@ -9,12 +9,14 @@ actor PromptQueue {
     private var pending: [Pending] = []
     private var onHeadChange: ((Prompt?, Int) -> Void)?
 
-    enum QueueError: Error {
+    public enum QueueError: Error, Equatable {
         case timedOut
     }
 
-    func enqueue(_ prompt: Prompt) async throws -> DecisionResponse {
-        return try await withCheckedThrowingContinuation { cont in
+    public init() {}
+
+    public func enqueue(_ prompt: Prompt) async throws -> DecisionResponse {
+        try await withCheckedThrowingContinuation { cont in
             let item = Pending(prompt: prompt, continuation: cont)
             let wasEmpty = pending.isEmpty
             pending.append(item)
@@ -22,7 +24,7 @@ actor PromptQueue {
         }
     }
 
-    func enqueueWithTimeout(_ prompt: Prompt, seconds: TimeInterval) async throws -> DecisionResponse {
+    public func enqueueWithTimeout(_ prompt: Prompt, seconds: TimeInterval) async throws -> DecisionResponse {
         try await withThrowingTaskGroup(of: DecisionResponse.self) { group in
             group.addTask { try await self.enqueue(prompt) }
             group.addTask {
@@ -36,19 +38,19 @@ actor PromptQueue {
         }
     }
 
-    func resolveHead(with response: DecisionResponse) {
+    public func resolveHead(with response: DecisionResponse) {
         guard !pending.isEmpty else { return }
         let head = pending.removeFirst()
         head.continuation.resume(returning: response)
         notifyHead()
     }
 
-    /// Convenience for permission decisions (allow/deny/cancel — no text payload).
-    func resolveHead(with decision: Decision) {
-        resolveHead(with: DecisionResponse(decision: decision, text: nil))
+    /// Convenience for permission decisions.
+    public func resolveHead(with decision: Decision) {
+        resolveHead(with: DecisionResponse(decision: decision))
     }
 
-    func setOnHeadChange(_ cb: @escaping (Prompt?, Int) -> Void) {
+    public func setOnHeadChange(_ cb: @escaping (Prompt?, Int) -> Void) {
         onHeadChange = cb
         notifyHead()
     }

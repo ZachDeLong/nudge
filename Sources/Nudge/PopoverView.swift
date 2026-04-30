@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import NudgeCore
 
 struct PopoverView: View {
     let prompt: Prompt?

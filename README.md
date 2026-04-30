@@ -43,8 +43,8 @@ Then clone the repo to wire the hook into Claude Code (you only need the scripts
 ```sh
 git clone https://github.com/ZachDeLong/nudge.git
 cd nudge
-./scripts/install-hook.sh   # writes the PreToolUse entry into settings.json
 ./scripts/seed-patterns.sh  # creates ~/.config/nudge/patterns.txt with defaults
+./scripts/install-hook.sh   # writes the PreToolUse entry into settings.json
 open -ga Nudge
 ```
 
@@ -55,9 +55,11 @@ Requirements: macOS 14+ and `jq` (the hook installer reads and rewrites `~/.clau
 Two halves:
 
 - **The app** runs as a menu bar icon. It owns an `NSStatusItem`, a popover, and a tiny localhost HTTP server. The server is how the hook talks to it.
-- **The hook** is a small Swift CLI at `Nudge.app/Contents/MacOS/nudge-hook`. Claude Code runs it via the `PreToolUse` hook. It reads the tool call from stdin, checks `patterns.txt`, and POSTs to the app if there's a match. Then it blocks until you click Allow or Deny.
+- **The hook** is a small Swift CLI at `Nudge.app/Contents/MacOS/nudge-hook`. Claude Code runs it via the `PreToolUse` hook. It reads the tool call from stdin, checks `patterns.txt`, and POSTs to the app with a local bearer token if there's a match. Then it blocks until you click Allow or Deny.
 
 If the app isn't running when the hook fires, the hook auto-launches it via `open -ga Nudge`. If anything fails, the hook exits silently and Claude falls back to its normal terminal prompt.
+
+On first launch, Nudge creates `~/.config/nudge/token` with a random local bearer token. The server requires that token for `/prompt` and `/ask`, which keeps unrelated local processes from casually posting fake prompts if they discover the port.
 
 ## Patterns
 
@@ -115,7 +117,7 @@ Click the menu bar icon when there's no prompt up. The idle popover doubles as a
 
 Right-clicking the icon opens the same toggles as a context menu, in case that's the gesture you reach for.
 
-Settings persist in `~/.config/nudge/prefs.json` and are re-read on every hook call, so toggles take effect immediately.
+Settings persist in `~/.config/nudge/prefs.json` and are re-read on every hook call, so toggles take effect immediately. The local HTTP token lives next to it at `~/.config/nudge/token`; you normally should not need to edit it.
 
 ## nudge-ask
 
@@ -158,7 +160,7 @@ Either way, pre-allowing the `Bash(...:*)` rule keeps Claude from prompting befo
 cd /path/to/nudge && make uninstall
 ```
 
-Removes `/Applications/Nudge.app`, kills the running app, and cleans the hook out of `settings.json` (with a backup).
+Removes `/Applications/Nudge.app`, kills the running app, removes runtime port/token files, and cleans the hook out of `settings.json` (with a backup). Your patterns and prefs are left in `~/.config/nudge/`.
 
 ## License
 

@@ -21,6 +21,7 @@ if [[ ! -f "$PATTERNS" ]]; then
     exit 1
 fi
 
+mkdir -p "$(dirname "$SETTINGS")"
 if [[ ! -f "$SETTINGS" ]]; then
     echo "{}" > "$SETTINGS"
 fi

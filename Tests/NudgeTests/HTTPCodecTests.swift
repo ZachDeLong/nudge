@@ -1,5 +1,5 @@
 import XCTest
-@testable import Nudge
+@testable import NudgeCore
 
 final class HTTPCodecTests: XCTestCase {
     func testParsesValidPostRequest() throws {
@@ -36,5 +36,19 @@ final class HTTPCodecTests: XCTestCase {
         XCTAssertTrue(s.contains("Content-Type: application/json\r\n"))
         XCTAssertTrue(s.contains("Content-Length: \(body.count)\r\n"))
         XCTAssertTrue(s.hasSuffix("{\"decision\":\"allow\"}"))
+    }
+
+    func testWritesUnauthorizedResponse() {
+        let bytes = HTTPCodec.writeResponse(status: 401, contentType: "text/plain", body: Array("unauthorized".utf8))
+        let s = String(bytes: bytes, encoding: .utf8)!
+        XCTAssertTrue(s.hasPrefix("HTTP/1.1 401 Unauthorized\r\n"))
+    }
+
+    func testParsesHTTPResponse() throws {
+        let raw = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"decision\":\"allow\"}"
+        let resp = try HTTPCodec.parseResponse(Data(raw.utf8))
+        XCTAssertEqual(resp.status, 200)
+        XCTAssertEqual(resp.headers["Content-Type"], "application/json")
+        XCTAssertEqual(String(data: resp.body, encoding: .utf8), "{\"decision\":\"allow\"}")
     }
 }

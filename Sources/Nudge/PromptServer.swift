@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import NudgeCore
 
 actor PromptServer {
     private let queue: PromptQueue
@@ -7,11 +8,13 @@ actor PromptServer {
     private var listener: NWListener?
     private(set) var boundPort: UInt16 = 0
     private let timeoutSeconds: TimeInterval
+    private let authToken: String
 
-    init(queue: PromptQueue, port: UInt16, timeoutSeconds: TimeInterval = 300) {
+    init(queue: PromptQueue, port: UInt16, authToken: String, timeoutSeconds: TimeInterval = 300) {
         self.queue = queue
         self.requestedPort = port == 0 ? .any : NWEndpoint.Port(rawValue: port)!
         self.timeoutSeconds = timeoutSeconds
+        self.authToken = authToken
     }
 
     func start() async throws {
@@ -100,6 +103,11 @@ actor PromptServer {
         // /prompt and /ask use the same Prompt body shape — the `kind` field
         // discriminates. We accept both endpoints to keep the URL paths
         // self-documenting (the CLI binaries hit different paths).
+        guard isAuthorized(req) else {
+            let resp = HTTPCodec.writeResponse(status: 401, contentType: "text/plain", body: Array("unauthorized".utf8))
+            await sendAndAwait(Data(resp), on: conn)
+            return
+        }
         let prompt: Prompt
         do {
             prompt = try JSONDecoder().decode(Prompt.self, from: Data(req.body))
@@ -117,5 +125,14 @@ actor PromptServer {
             let resp = HTTPCodec.writeResponse(status: 408, contentType: "text/plain", body: Array("timeout".utf8))
             await sendAndAwait(Data(resp), on: conn)
         }
+    }
+
+    private func isAuthorized(_ req: HTTPCodec.Request) -> Bool {
+        guard let header = req.headers.first(where: {
+            $0.key.caseInsensitiveCompare("Authorization") == .orderedSame
+        })?.value else {
+            return false
+        }
+        return header == "Bearer \(authToken)"
     }
 }
