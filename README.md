@@ -78,7 +78,9 @@ Edit(/Users/**/.claude/**)  # any user's claude config
 
 `*` matches a single path segment; `**` matches across slashes. Bash supports prefix (`x:*`), infix (`*x*`), and exact match.
 
-Chained Bash calls match too. The hook tokenizes the command on `&&`, `||`, `;`, `|`, and `&` (respecting quotes and `$(...)`), then checks each segment. So `Bash(git push:*)` fires on a real-world `cd ~/repo && git add . && git commit -m '…' && git push`, which is how agents (and humans) actually push.
+Chained Bash calls match too. The hook tokenizes the command on `&&`, `||`, `;`, `|`, and `&` (respecting quotes, `$(...)` substitutions, and `$((...))` arithmetic), then checks each segment. Subshell `(...)` and brace `{...;}` wrappers are peeled and re-checked. So `Bash(git push:*)` fires on `cd ~/repo && git push`, and `Bash(rm:*)` fires on `(rm -rf foo); ls` — the way agents (and humans) actually run things.
+
+Prefix patterns match at token boundaries: `Bash(rm:*)` catches `rm` and `rm -rf foo` but not `rmdir`. Infix patterns ignore case, quote characters, and backslash escapes, and inline the bodies of `$(...)` / backticks: `Bash(*--force*)` catches `--FORCE`, `--for""ce`, `git push --for\ce`, and `git push $(echo --force)`. Determined adversarial inputs (env-var split-and-reassemble, `printf '\xNN'` hex escapes, `eval`, `base64 -d`) aren't normalized — Nudge's threat model is agent-accident, not adversarial bypass.
 
 When you install, Nudge also imports `Bash()`-style rules from your existing `permissions.ask` array in `~/.claude/settings.json`. So if you've already told Claude Code to ask about `git push:*`, Nudge picks that up automatically. Run `make import-permissions` later to merge in new ones.
 

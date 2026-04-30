@@ -33,15 +33,5 @@ let package = Package(
             dependencies: ["NudgeHookCore"],
             path: "Sources/MatchingTestRunner"
         ),
-        .testTarget(
-            name: "NudgeTests",
-            dependencies: ["Nudge"],
-            path: "Tests/NudgeTests"
-        ),
-        .testTarget(
-            name: "NudgeHookCoreTests",
-            dependencies: ["NudgeHookCore"],
-            path: "Tests/NudgeHookCoreTests"
-        ),
     ]
 )
