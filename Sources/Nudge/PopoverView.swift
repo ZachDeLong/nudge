@@ -15,6 +15,12 @@ struct PopoverView: View {
     let onTogglePause: () -> Void
     let onToggleSkipTerminal: () -> Void
     let onQuit: () -> Void
+    @ObservedObject var agentChat: AgentChatStore
+    let onRefreshAgentSessions: () -> Void
+    let onSelectAgentSession: (String) -> Void
+    let onSendAgentMessage: (String, String) -> Void
+    let onEndAgentSession: (String) -> Void
+    let onRenameAgentSession: (String, String?) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,7 +31,7 @@ struct PopoverView: View {
             }
         }
         .padding(16)
-        .frame(width: 380)
+        .frame(width: 420)
         .background(VisualEffectBackground())
     }
 
@@ -239,6 +245,17 @@ struct PopoverView: View {
             }
             .toggleStyle(.checkbox)
 
+            Divider()
+
+            AgentSessionsPanel(
+                store: agentChat,
+                onRefresh: onRefreshAgentSessions,
+                onSelect: onSelectAgentSession,
+                onSend: onSendAgentMessage,
+                onEndSession: onEndAgentSession,
+                onRenameSession: onRenameAgentSession
+            )
+
             HStack {
                 Spacer()
                 Button(action: onQuit) {
@@ -249,6 +266,202 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+}
+
+// MARK: - Agent session mirror
+
+private struct AgentSessionsPanel: View {
+    @ObservedObject var store: AgentChatStore
+    let onRefresh: () -> Void
+    let onSelect: (String) -> Void
+    let onSend: (String, String) -> Void
+    let onEndSession: (String) -> Void
+    let onRenameSession: (String, String?) -> Void
+
+    @State private var draft: String = ""
+    @State private var renameDraft: String = ""
+    @State private var isRenaming: Bool = false
+    @FocusState private var inputFocused: Bool
+    @FocusState private var renameFocused: Bool
+
+    private var selectedID: String {
+        store.detail?.id ?? store.sessions.first?.id ?? ""
+    }
+
+    private static let sessionLabelTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short
+        return f
+    }()
+
+    private func sessionLabel(_ session: AgentSessionSummary) -> String {
+        if let title = session.customTitle, !title.isEmpty {
+            return title
+        }
+        let time = Self.sessionLabelTimeFormatter.string(from: session.createdAt)
+        return "\(session.kind.rawValue) · \(session.projectName) · \(time)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .foregroundColor(.secondary)
+                Text("Agent sessions")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                if let detail = store.detail {
+                    Button(action: { beginRename(detail) }) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Rename this session")
+                    .popover(isPresented: $isRenaming, arrowEdge: .top) {
+                        renamePopoverBody(for: detail)
+                    }
+                    Button(action: { onEndSession(detail.id) }) {
+                        Image(systemName: "stop.circle")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("End this session (kills the tmux pane)")
+                }
+                Button(action: onRefresh) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .help("Refresh sessions")
+            }
+
+            if store.sessions.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "terminal")
+                        .foregroundColor(.secondary)
+                    Text("No mirrored sessions")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.vertical, 2)
+            } else {
+                Picker("Session", selection: Binding(
+                    get: { selectedID },
+                    set: { onSelect($0) }
+                )) {
+                    ForEach(store.sessions) { session in
+                        Text(sessionLabel(session))
+                            .tag(session.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+
+                if let detail = store.detail {
+                    transcriptView(detail.transcript)
+
+                    HStack(spacing: 8) {
+                        TextField("Message \(detail.summary.kind.rawValue) (↵ to send, ⇧↵ for newline)", text: $draft, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12))
+                            .lineLimit(1...4)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(Color.primary.opacity(0.06))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .focused($inputFocused)
+                            .onKeyPress(.return) {
+                                if NSEvent.modifierFlags.contains(.shift) {
+                                    return .ignored
+                                }
+                                send()
+                                return .handled
+                            }
+
+                        Button(action: send) {
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .help("Send message")
+                    }
+                    .onAppear { inputFocused = true }
+                    .onChange(of: detail.id) { _, _ in inputFocused = true }
+                }
+            }
+
+            if let error = store.error, !error.isEmpty {
+                Text(error)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func transcriptView(_ transcript: String) -> some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            Text(transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No output yet." : transcript)
+                .font(.system(size: 11, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+        }
+        .frame(maxHeight: 180)
+        .background(Color.primary.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func send() {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !selectedID.isEmpty else { return }
+        draft = ""
+        onSend(selectedID, trimmed)
+    }
+
+    private func beginRename(_ detail: AgentSessionDetail) {
+        renameDraft = detail.summary.customTitle ?? sessionLabel(detail.summary)
+        isRenaming = true
+    }
+
+    private func commitRename(_ id: String) {
+        let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        onRenameSession(id, trimmed.isEmpty ? nil : trimmed)
+        isRenaming = false
+    }
+
+    private func cancelRename() {
+        isRenaming = false
+    }
+
+    @ViewBuilder
+    private func renamePopoverBody(for detail: AgentSessionDetail) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Rename session")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+            TextField("Session name", text: $renameDraft)
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 240)
+                .focused($renameFocused)
+                .onAppear { renameFocused = true }
+                .onSubmit { commitRename(detail.id) }
+            HStack {
+                Spacer()
+                Button("Cancel") { cancelRename() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") { commitRename(detail.id) }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(12)
     }
 }
 

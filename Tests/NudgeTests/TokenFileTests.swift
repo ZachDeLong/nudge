@@ -64,7 +64,7 @@ final class TokenFileTests: XCTestCase {
         try String(repeating: "c", count: 64).write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
         XCTAssertThrowsError(try TokenFile.read(from: url)) { error in
-            XCTAssertEqual(error as? TokenFile.FileError, .permsTooBroad)
+            XCTAssertEqual(error as? FilePermsError, .permsTooBroad)
         }
     }
 }

@@ -11,9 +11,6 @@ public enum TokenFile {
     public enum FileError: Error, Equatable {
         case missing
         case malformed
-        case statFailed(Int32)
-        case notOwnerOwned
-        case permsTooBroad
         case writeFailed(Int32)
     }
 
@@ -76,18 +73,5 @@ public enum TokenFile {
     private static func isValid(_ token: String) -> Bool {
         let hex = "0123456789abcdef"
         return token.count >= 32 && token.allSatisfy { hex.contains($0) }
-    }
-
-    private static func assertOwnerOnlyPerms(at url: URL) throws {
-        var st = stat()
-        guard lstat(url.path, &st) == 0 else {
-            throw FileError.statFailed(errno)
-        }
-        guard st.st_uid == getuid() else {
-            throw FileError.notOwnerOwned
-        }
-        if (st.st_mode & 0o077) != 0 {
-            throw FileError.permsTooBroad
-        }
     }
 }

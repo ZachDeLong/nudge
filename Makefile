@@ -23,6 +23,7 @@ install: build
 	cp $(BUILD_DIR)/Nudge $(BUILD_DIR)/Nudge.app/Contents/MacOS/Nudge
 	cp $(BUILD_DIR)/nudge-hook $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-hook
 	cp $(BUILD_DIR)/nudge-ask $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-ask
+	cp $(BUILD_DIR)/nudge-claude $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-claude
 	cp Resources-Info.plist $(BUILD_DIR)/Nudge.app/Contents/Info.plist
 	@echo "→ Copying to /Applications…"
 	-pkill -x Nudge 2>/dev/null || true
@@ -33,6 +34,8 @@ install: build
 	./scripts/seed-patterns.sh
 	@echo "→ Wiring hooks into Claude Code…"
 	./scripts/install-hook.sh
+	@echo "→ Symlinking nudge-claude into PATH…"
+	@./scripts/link-cli.sh
 	@echo "→ Launching Nudge…"
 	open -ga Nudge
 	@echo ""
@@ -74,5 +77,6 @@ uninstall:
 	-pkill -x Nudge 2>/dev/null || true
 	rm -rf $(APP_DEST)
 	rm -f $(HOME)/.config/nudge/port $(HOME)/.config/nudge/token
+	@./scripts/link-cli.sh --uninstall
 	./scripts/uninstall-hook.sh
 	@echo "✓ Nudge uninstalled."

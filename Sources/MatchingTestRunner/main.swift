@@ -402,7 +402,7 @@ do {
     do {
         _ = try TokenFile.read(from: url)
         failures.append("✗ token: read on world-readable file should throw")
-    } catch TokenFile.FileError.permsTooBroad {
+    } catch FilePermsError.permsTooBroad {
         passed += 1
     } catch {
         failures.append("✗ token: read on world-readable file threw \(error), expected .permsTooBroad")

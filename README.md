@@ -6,6 +6,8 @@ A macOS menu bar app for Claude Code permission prompts. When Claude wants to ru
 
 It also ships with `nudge-ask`, a small CLI Claude can call when it needs a free-form text answer from you. Same popover style, with a text field instead of Allow/Deny.
 
+Experimental: `nudge-claude` can launch Claude Code inside a tmux session that Nudge can mirror from the menu bar. That gives you a compact transcript and reply box while you test the app Claude is building.
+
 ## Why I built it
 
 I run Claude Code in auto mode and keep it on a side monitor. When something risky comes up, auto mode is supposed to stop and ask. But the prompt shows up in whichever terminal Claude is running in, and if I'm testing the app it just built, I don't see it for thirty seconds. Nudge surfaces those moments in the menu bar so I can answer without hunting.
@@ -147,12 +149,25 @@ Or paste this into your Claude Code session and Claude will wire it up itself:
 
 Either way, pre-allowing the `Bash(...:*)` rule keeps Claude from prompting before each call.
 
+## Agent sessions
+
+`nudge-claude` starts Claude Code inside a named tmux session and attaches your terminal to it:
+
+```sh
+/Applications/Nudge.app/Contents/MacOS/nudge-claude
+```
+
+Once it is running, click the Nudge menu bar icon with no permission prompt active. The idle panel shows mirrored agent sessions, recent terminal output, and a reply box. Messages sent there are forwarded to the same tmux pane via `tmux send-keys`, so the terminal Claude session keeps its cwd, project context, skills, plugins, MCPs, and hooks.
+
+Requirements for this experimental mode: `tmux` and the `claude` CLI on your `PATH`. Install tmux with `brew install tmux`. Nudge checks the usual Homebrew tmux paths when the menu bar app is launched without your shell `PATH`; set `NUDGE_TMUX_PATH` if tmux lives somewhere custom.
+
 ## Known limits
 
 - **Unsigned build.** The Makefile runs `xattr -d com.apple.quarantine` so it launches without Gatekeeper complaining, but the build isn't code-signed or notarized. If you download the prebuilt zip, you'll need to run that `xattr` command yourself once.
 - **One Mac at a time.** Patterns aren't synced across machines.
 - **Hooks fire before Claude classifies.** That's why patterns are explicit opt-in rather than "everything auto mode would prompt about." `PreToolUse` runs before Claude decides whether a call would trigger a prompt, and the `PermissionRequest` event (which fires at the right time) is observe-only.
 - **Queue is FIFO with a 5-minute timeout.** Pile up enough prompts and the older ones expire.
+- **Agent session mirroring requires `nudge-claude`.** Nudge can cleanly mirror sessions it launched through tmux; it does not attach to arbitrary existing terminal tabs.
 
 ## Uninstall
 

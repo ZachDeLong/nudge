@@ -2,6 +2,17 @@ import AppKit
 import SwiftUI
 import NudgeCore
 
+/// SwiftUI source-of-truth for the chat panel. Living in an ObservableObject
+/// (rather than `let` props on PopoverView) means polling can update the
+/// transcript without remounting the AgentSessionsPanel — so the TextField's
+/// `@State` survives auto-refresh cycles.
+@MainActor
+final class AgentChatStore: ObservableObject {
+    @Published var sessions: [AgentSessionSummary] = []
+    @Published var detail: AgentSessionDetail?
+    @Published var error: String?
+}
+
 @MainActor
 final class MenuBarController: NSObject {
     private let queue: PromptQueue
@@ -11,9 +22,13 @@ final class MenuBarController: NSObject {
     private var currentPrompt: Prompt?
     private var queueDepth: Int = 0
     private var pulseTimer: Timer?
+    private var agentRefreshTimer: Timer?
+    private var agentRefreshTask: Task<Void, Never>?
+    private var agentRefreshInFlight = false
     private var keyMonitor: Any?
     private var clickMonitor: Any?
     private var settings: Prefs = .load()
+    private let agentChat = AgentChatStore()
 
     init(queue: PromptQueue) {
         self.queue = queue
@@ -88,6 +103,7 @@ final class MenuBarController: NSObject {
         if panel.isVisible {
             dismissPanel()
         } else {
+            refreshAgentSessions()
             renderAndShow()
         }
     }
@@ -166,25 +182,61 @@ final class MenuBarController: NSObject {
         NSApp.terminate(nil)
     }
 
+    private func buildPopoverView() -> PopoverView {
+        PopoverView(
+            prompt: currentPrompt,
+            queueDepth: queueDepth,
+            prefs: settings,
+            onAllow: { [weak self] in self?.resolve(.allow) },
+            onDeny:  { [weak self] in self?.resolve(.deny) },
+            onAlwaysAllow: { [weak self] in self?.alwaysAllowCurrent() },
+            onSessionAllow: { [weak self] in self?.sessionAllowCurrent() },
+            onSubmitText: { [weak self] text in self?.submitAskText(text) },
+            onCancelAsk: { [weak self] in self?.resolve(.cancel) },
+            onTogglePause: { [weak self] in self?.togglePauseAndRefresh() },
+            onToggleSkipTerminal: { [weak self] in self?.toggleSkipTerminalAndRefresh() },
+            onQuit: { [weak self] in self?.quitApp() },
+            agentChat: agentChat,
+            onRefreshAgentSessions: { [weak self] in self?.refreshAgentSessions() },
+            onSelectAgentSession: { [weak self] id in self?.refreshAgentSessions(selecting: id) },
+            onSendAgentMessage: { [weak self] id, text in self?.sendAgentMessage(text, to: id) },
+            onEndAgentSession: { [weak self] id in self?.endAgentSession(id) },
+            onRenameAgentSession: { [weak self] id, title in self?.renameAgentSession(id: id, title: title) }
+        )
+    }
+
+    private func endAgentSession(_ id: String) {
+        Task { [weak self] in
+            await Task.detached {
+                let backend = TmuxAgentBackend()
+                if let session = (try? backend.listSessions())?.first(where: { $0.id == id }) {
+                    backend.killSession(session)
+                }
+            }.value
+            await MainActor.run {
+                self?.refreshAgentSessions()
+            }
+        }
+    }
+
+    private func renameAgentSession(id: String, title: String?) {
+        Task { [weak self] in
+            await Task.detached {
+                try? AgentSessionFiles.setCustomTitle(id: id, title: title)
+            }.value
+            await MainActor.run {
+                self?.refreshAgentSessions(selecting: id)
+            }
+        }
+    }
+
     private func renderAndShow() {
         let isAsk = currentPrompt?.resolvedKind == .ask
+        let hasChat = currentPrompt == nil && agentChat.detail != nil
         panel.show(
-            content: PopoverView(
-                prompt: currentPrompt,
-                queueDepth: queueDepth,
-                prefs: settings,
-                onAllow: { [weak self] in self?.resolve(.allow) },
-                onDeny:  { [weak self] in self?.resolve(.deny) },
-                onAlwaysAllow: { [weak self] in self?.alwaysAllowCurrent() },
-                onSessionAllow: { [weak self] in self?.sessionAllowCurrent() },
-                onSubmitText: { [weak self] text in self?.submitAskText(text) },
-                onCancelAsk: { [weak self] in self?.resolve(.cancel) },
-                onTogglePause: { [weak self] in self?.togglePauseAndRefresh() },
-                onToggleSkipTerminal: { [weak self] in self?.toggleSkipTerminalAndRefresh() },
-                onQuit: { [weak self] in self?.quitApp() }
-            ),
+            content: buildPopoverView(),
             anchorTo: statusItem.button,
-            makeKey: isAsk
+            makeKey: isAsk || hasChat
         )
         // Click-outside dismiss applies to every visible state of the panel.
         startClickMonitor()
@@ -196,12 +248,37 @@ final class MenuBarController: NSObject {
         } else {
             stopPulse()
         }
+        // Auto-refresh chat data while popover is open in idle/chat state. The
+        // store-based architecture means @Published mutations re-render only
+        // the transcript subtree; the TextField's @State (draft) survives.
+        // Poll even when no session exists so a freshly started `nudge-claude`
+        // shows up without close+reopen.
+        if currentPrompt == nil {
+            startAgentRefresh()
+        } else {
+            stopAgentRefresh()
+        }
     }
 
     private func dismissPanel() {
         stopClickMonitor()
         stopPulse()
+        stopAgentRefresh()
         panel.hide()
+    }
+
+    private func startAgentRefresh() {
+        stopAgentRefresh()
+        agentRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshAgentSessions(selecting: self?.agentChat.detail?.id, isPolling: true)
+            }
+        }
+    }
+
+    private func stopAgentRefresh() {
+        agentRefreshTimer?.invalidate()
+        agentRefreshTimer = nil
     }
 
     private func subscribeToQueue() async {
@@ -339,6 +416,106 @@ final class MenuBarController: NSObject {
     private func stopClickMonitor() {
         if let m = clickMonitor { NSEvent.removeMonitor(m); clickMonitor = nil }
     }
+
+    // MARK: - Agent sessions
+
+    /// User-initiated refreshes (button clicks, picker selection, end, rename)
+    /// cancel any in-flight refresh so they win the race against polling.
+    /// Polling refreshes (`isPolling: true`) skip if a refresh is already
+    /// running — otherwise back-to-back polling ticks could keep cancelling
+    /// each other on a slow tmux capture and the store would never update.
+    ///
+    /// Failure handling is intentionally conservative: a transient
+    /// `backend.detail` error (which happens for a few hundred ms after tmux
+    /// state changes — kill, rename, etc.) shouldn't blank the chat UI. We
+    /// keep the prior detail in place and let the next successful refresh
+    /// replace it.
+    private func refreshAgentSessions(selecting sessionID: String? = nil, isPolling: Bool = false) {
+        if isPolling {
+            if agentRefreshInFlight { return }
+        } else {
+            agentRefreshTask?.cancel()
+        }
+        agentRefreshInFlight = true
+        agentRefreshTask = Task { [weak self] in
+            let result = await Task.detached { () async -> Result<([AgentSessionSummary], AgentSessionDetail?), Error> in
+                do {
+                    let backend = TmuxAgentBackend()
+                    let sessions = try backend.listSessions()
+                    let selected = sessionID.flatMap { id in sessions.first(where: { $0.id == id }) }
+                        ?? sessions.first
+                    var detail: AgentSessionDetail? = nil
+                    if let selected {
+                        // Soft-fail on detail: a transient capture-pane miss
+                        // shouldn't propagate up as a full-failure.
+                        detail = try? backend.detail(for: selected)
+                    }
+                    return .success((sessions, detail))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+
+            if Task.isCancelled {
+                await MainActor.run { self?.agentRefreshInFlight = false }
+                return
+            }
+            await MainActor.run {
+                guard let self else { return }
+                self.agentRefreshInFlight = false
+                switch result {
+                case .success(let payload):
+                    self.agentChat.sessions = payload.0
+                    // Only overwrite detail when we actually have one. Keeping
+                    // the prior detail prevents the transcript from blanking
+                    // mid-rename or mid-end while the next poll catches up.
+                    if let detail = payload.1 {
+                        self.agentChat.detail = detail
+                    } else if !payload.0.contains(where: { $0.id == self.agentChat.detail?.id }) {
+                        // Selected session is no longer in the list; clear it.
+                        self.agentChat.detail = nil
+                    }
+                    self.agentChat.error = nil
+                case .failure(let error):
+                    // listSessions itself failed (rare). Keep the stale UI;
+                    // surface the error so the user can see what happened.
+                    self.agentChat.error = String(describing: error)
+                }
+            }
+        }
+    }
+
+    private func sendAgentMessage(_ text: String, to sessionID: String) {
+        Task { [weak self] in
+            let result = await Task.detached { () async -> Result<AgentSessionDetail, Error> in
+                do {
+                    let backend = TmuxAgentBackend()
+                    let sessions = try backend.listSessions()
+                    guard let session = sessions.first(where: { $0.id == sessionID }) else {
+                        throw TmuxAgentError.sessionMissing(sessionID)
+                    }
+                    try backend.send(text, to: session)
+                    // Brief settle so a fast Claude reply lands in the first
+                    // snapshot. The polling timer picks up everything after.
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    return .success(try backend.detail(for: session))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+
+            await MainActor.run {
+                guard let self else { return }
+                switch result {
+                case .success(let detail):
+                    self.agentChat.detail = detail
+                    self.agentChat.error = nil
+                case .failure(let error):
+                    self.agentChat.error = String(describing: error)
+                }
+            }
+        }
+    }
 }
 
 // MARK: - PromptPanel
@@ -384,9 +561,20 @@ final class PromptPanel {
     }
 
     /// Fallback content size if SwiftUI hasn't reported an intrinsic size yet.
-    /// Width matches PopoverView's `.frame(width: 380)`. Height is generous;
+    /// Width matches PopoverView's `.frame(width: 420)`. Height is generous;
     /// the real height comes from `hosting.view.fittingSize` in show().
-    private static let fallbackContentSize = NSSize(width: 380, height: 200)
+    private static let fallbackContentSize = NSSize(width: 420, height: 200)
+
+    /// Swaps the SwiftUI root view without re-running positioning or the
+    /// drop-in animation. Used when the popover content changes mid-display
+    /// (e.g., chat-mirror auto-refresh) so the panel doesn't re-animate.
+    func updateContent(_ content: PopoverView) {
+        guard panel.isVisible else { return }
+        hosting.rootView = AnyView(
+            content
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        )
+    }
 
     func show(content: PopoverView, anchorTo button: NSStatusBarButton?, makeKey: Bool = false) {
         hosting.rootView = AnyView(
