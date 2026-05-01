@@ -159,7 +159,8 @@ Either way, pre-allowing the `Bash(...:*)` rule keeps Claude from prompting befo
 nudge-claude              # start a new session in the current directory
 nudge-claude attach       # re-attach to the most recent session
 nudge-claude attach <id>  # attach to a specific session (id from `list`)
-nudge-claude list         # list active sessions
+nudge-claude list         # list mirrored sessions
+nudge-claude prune [days] # remove stale missing/ended records older than days (default: 7)
 nudge-claude --help       # show help
 ```
 
@@ -180,13 +181,13 @@ Click the Nudge menu bar icon with no permission prompt active. The idle panel s
 - **Refresh (↻)** pulls the latest transcript. The panel also polls every 1.5s while open.
 - **Send** with Enter. Shift+Enter inserts a newline.
 
-Messages are forwarded to the tmux pane via `tmux send-keys`, so the terminal Claude session keeps its cwd, project context, skills, plugins, MCPs, and hooks.
+Messages are forwarded to the tmux pane via a bracketed paste buffer, so multiline prompts survive and the terminal Claude session keeps its cwd, project context, skills, plugins, MCPs, and hooks.
 
 ### Requirements & threat model
 
 Needs `tmux` and the `claude` CLI on your `PATH`. Install tmux with `brew install tmux`. Nudge checks the usual Homebrew tmux paths when the menu bar app is launched without your shell `PATH`; set `NUDGE_TMUX_PATH` if tmux lives somewhere custom.
 
-Session metadata at `~/.config/nudge/sessions/*.json` is owner-only (`0o600`) and validated on read. Nudge refuses to load a planted JSON from another local user. Messages sent through the chat input have C0 control bytes stripped before reaching tmux, so a chat message can't deliver terminal escape sequences to the pane.
+Session metadata at `~/.config/nudge/sessions/*.json` is owner-only (`0o600`) and validated on read. Nudge refuses to load a planted JSON from another local user. Messages sent through the chat input have control bytes and Unicode line separators stripped before reaching tmux, so a chat message can't deliver terminal escape sequences to the pane.
 
 ## Known limits
 

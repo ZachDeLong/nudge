@@ -23,7 +23,7 @@ final class TmuxAgentBackendTests: XCTestCase {
     }
 
     func testSanitizedPasteTextPreservesNewlinesAndTabs() {
-        let raw = "first\r\nsecond\tcolumn\u{001B}]52;c;bad\u{0007}\u{0085}done"
+        let raw = "first\r\nsecond\tcolumn\u{001B}]52;c;bad\u{0007}\u{0085}\u{2028}done\u{2029}"
 
         let sanitized = TmuxAgentBackend.sanitizedPasteText(raw)
 
@@ -32,6 +32,8 @@ final class TmuxAgentBackendTests: XCTestCase {
         XCTAssertFalse(sanitized.unicodeScalars.contains { $0.value == 0x1B })
         XCTAssertFalse(sanitized.unicodeScalars.contains { $0.value == 0x07 })
         XCTAssertFalse(sanitized.unicodeScalars.contains { $0.value == 0x85 })
+        XCTAssertFalse(sanitized.unicodeScalars.contains { $0.value == 0x2028 })
+        XCTAssertFalse(sanitized.unicodeScalars.contains { $0.value == 0x2029 })
     }
 
     func testCleanTranscriptStripsCsiOscAndDcsSequences() {

@@ -9,6 +9,7 @@ func usage() {
     nudge-claude              Start a new Claude session in tmux and attach.
     nudge-claude attach [id]  Re-attach to an existing session (most recent if no id).
     nudge-claude list         List mirrored Claude sessions.
+    nudge-claude prune [days] Remove stale missing/ended session records older than days (default: 7).
     nudge-claude --help       Show this help.
 
     """, stderr)
@@ -31,12 +32,33 @@ case "list":
     do {
         let sessions = try backend.listSessions()
         if sessions.isEmpty {
-            print("No active sessions. Start one with: nudge-claude")
+            print("No mirrored sessions. Start one with: nudge-claude")
         } else {
             for session in sessions {
                 print("\(session.id)\t\(status(session))\t\(describe(session))\t\(session.tmuxSession)")
             }
         }
+        exit(0)
+    } catch {
+        fputs("nudge-claude: \(error)\n", stderr)
+        exit(1)
+    }
+
+case "prune":
+    do {
+        let days: Int
+        if args.count >= 2 {
+            guard let parsed = Int(args[1]), parsed >= 0 else {
+                fputs("nudge-claude: prune days must be a non-negative integer\n", stderr)
+                exit(1)
+            }
+            days = parsed
+        } else {
+            days = 7
+        }
+        let cutoff = Date().addingTimeInterval(-TimeInterval(days) * 86_400)
+        let removed = try backend.pruneSessions(olderThan: cutoff)
+        print("Pruned \(removed) stale session record\(removed == 1 ? "" : "s").")
         exit(0)
     } catch {
         fputs("nudge-claude: \(error)\n", stderr)

@@ -144,8 +144,6 @@ public struct TmuxAgentBackend: Sendable {
         let bufferName = "nudge-\(session.id)-\(UUID().uuidString)"
 
         _ = try run(["load-buffer", "-b", bufferName, "-"], input: Data(safe.utf8))
-        defer { try? run(["delete-buffer", "-b", bufferName]) }
-
         _ = try run(["paste-buffer", "-d", "-p", "-b", bufferName, "-t", target])
         _ = try run(["send-keys", "-t", target, "Enter"])
     }
@@ -160,6 +158,8 @@ public struct TmuxAgentBackend: Sendable {
                 return true
             case 0x20...0x7E:
                 return true
+            case 0x2028, 0x2029:
+                return false
             case 0xA0...0x10FFFF:
                 return true
             default:
@@ -181,6 +181,21 @@ public struct TmuxAgentBackend: Sendable {
     public func killSession(_ session: AgentSessionSummary) {
         _ = try? run(["kill-session", "-t", session.tmuxSession])
         AgentSessionFiles.remove(id: session.id)
+    }
+
+    public func pruneSessions(olderThan cutoff: Date) throws -> Int {
+        guard isTmuxAvailable() else { throw TmuxAgentError.tmuxUnavailable }
+
+        var removed = 0
+        for session in try AgentSessionFiles.readAll() where session.createdAt < cutoff {
+            if hasSession(session.tmuxSession) {
+                guard isPaneDead(session.tmuxSession) else { continue }
+                _ = try? run(["kill-session", "-t", session.tmuxSession])
+            }
+            AgentSessionFiles.remove(id: session.id)
+            removed += 1
+        }
+        return removed
     }
 
     public func isTmuxAvailable() -> Bool {
