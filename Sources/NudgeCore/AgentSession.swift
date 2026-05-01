@@ -16,6 +16,7 @@ public struct AgentSessionSummary: Codable, Equatable, Identifiable, Sendable {
     public let tmuxSession: String
     public let createdAt: Date
     public var isAttached: Bool
+    public var isEnded: Bool
     public var customTitle: String?
 
     public init(
@@ -26,6 +27,7 @@ public struct AgentSessionSummary: Codable, Equatable, Identifiable, Sendable {
         tmuxSession: String,
         createdAt: Date,
         isAttached: Bool,
+        isEnded: Bool = false,
         customTitle: String? = nil
     ) {
         self.id = id
@@ -35,7 +37,46 @@ public struct AgentSessionSummary: Codable, Equatable, Identifiable, Sendable {
         self.tmuxSession = tmuxSession
         self.createdAt = createdAt
         self.isAttached = isAttached
+        self.isEnded = isEnded
         self.customTitle = customTitle
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case title
+        case cwd
+        case tmuxSession
+        case createdAt
+        case isAttached
+        case isEnded
+        case customTitle
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        kind = try container.decode(AgentKind.self, forKey: .kind)
+        title = try container.decode(String.self, forKey: .title)
+        cwd = try container.decode(String.self, forKey: .cwd)
+        tmuxSession = try container.decode(String.self, forKey: .tmuxSession)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        isAttached = try container.decode(Bool.self, forKey: .isAttached)
+        isEnded = try container.decodeIfPresent(Bool.self, forKey: .isEnded) ?? false
+        customTitle = try container.decodeIfPresent(String.self, forKey: .customTitle)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(title, forKey: .title)
+        try container.encode(cwd, forKey: .cwd)
+        try container.encode(tmuxSession, forKey: .tmuxSession)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(isAttached, forKey: .isAttached)
+        try container.encode(isEnded, forKey: .isEnded)
+        try container.encodeIfPresent(customTitle, forKey: .customTitle)
     }
 
     public var projectName: String {

@@ -470,7 +470,7 @@ final class MenuBarController: NSObject {
 
     private func sendAgentMessage(_ text: String, to sessionID: String) {
         Task { [weak self] in
-            let result = await Task.detached { () async -> Result<AgentSessionDetail, Error> in
+            let result = await Task.detached { () async -> Result<Void, Error> in
                 do {
                     let backend = TmuxAgentBackend()
                     let sessions = try backend.listSessions()
@@ -478,10 +478,7 @@ final class MenuBarController: NSObject {
                         throw TmuxAgentError.sessionMissing(sessionID)
                     }
                     try backend.send(text, to: session)
-                    // Brief settle so a fast Claude reply lands in the first
-                    // snapshot. The polling timer picks up everything after.
-                    try? await Task.sleep(nanoseconds: 600_000_000)
-                    return .success(try backend.detail(for: session))
+                    return .success(())
                 } catch {
                     return .failure(error)
                 }
@@ -490,9 +487,9 @@ final class MenuBarController: NSObject {
             await MainActor.run {
                 guard let self else { return }
                 switch result {
-                case .success(let detail):
-                    self.agentChat.detail = detail
+                case .success:
                     self.agentChat.error = nil
+                    self.refreshAgentSessions(selecting: sessionID)
                 case .failure(let error):
                     self.agentChat.error = String(describing: error)
                 }

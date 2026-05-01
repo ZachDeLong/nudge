@@ -301,7 +301,8 @@ private struct AgentSessionsPanel: View {
             return title
         }
         let time = Self.sessionLabelTimeFormatter.string(from: session.createdAt)
-        return "\(session.kind.rawValue) · \(session.projectName) · \(time)"
+        let label = "\(session.kind.rawValue) - \(session.projectName) - \(time)"
+        return session.isEnded ? "\(label) - ended" : label
     }
 
     var body: some View {
@@ -363,35 +364,11 @@ private struct AgentSessionsPanel: View {
                 if let detail = store.detail {
                     transcriptView(detail.transcript)
 
-                    HStack(spacing: 8) {
-                        TextField("Message \(detail.summary.kind.rawValue) (↵ to send, ⇧↵ for newline)", text: $draft, axis: .vertical)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12))
-                            .lineLimit(1...4)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(Color.primary.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .focused($inputFocused)
-                            .onKeyPress(.return) {
-                                if NSEvent.modifierFlags.contains(.shift) {
-                                    return .ignored
-                                }
-                                send()
-                                return .handled
-                            }
-
-                        Button(action: send) {
-                            Image(systemName: "paperplane.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .help("Send message")
+                    if detail.summary.isEnded {
+                        endedSessionNotice()
+                    } else {
+                        messageComposer(for: detail)
                     }
-                    .onAppear { inputFocused = true }
-                    .onChange(of: detail.id) { _, _ in inputFocused = true }
                 }
             }
 
@@ -402,6 +379,56 @@ private struct AgentSessionsPanel: View {
                     .lineLimit(2)
             }
         }
+    }
+
+    @ViewBuilder
+    private func endedSessionNotice() -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.circle")
+                .foregroundColor(.secondary)
+            Text("Session ended")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func messageComposer(for detail: AgentSessionDetail) -> some View {
+        HStack(spacing: 8) {
+            TextField("Message \(detail.summary.kind.rawValue)", text: $draft, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .lineLimit(1...4)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.primary.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .focused($inputFocused)
+                .onKeyPress(.return) {
+                    if NSEvent.modifierFlags.contains(.shift) {
+                        return .ignored
+                    }
+                    send()
+                    return .handled
+                }
+                .help("Enter sends. Shift+Enter inserts a newline.")
+
+            Button(action: send) {
+                Image(systemName: "paperplane.fill")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .help("Send message")
+        }
+        .onAppear { inputFocused = true }
+        .onChange(of: detail.id) { _, _ in inputFocused = true }
     }
 
     @ViewBuilder

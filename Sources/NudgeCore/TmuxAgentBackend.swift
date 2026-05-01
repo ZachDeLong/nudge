@@ -4,6 +4,7 @@ public enum TmuxAgentError: Error, CustomStringConvertible, Equatable, Sendable 
     case tmuxUnavailable
     case commandFailed(command: String, status: Int32, stderr: String)
     case sessionMissing(String)
+    case sessionEnded(String)
 
     public var description: String {
         switch self {
@@ -16,6 +17,8 @@ public enum TmuxAgentError: Error, CustomStringConvertible, Equatable, Sendable 
                 : "\(command) failed with status \(status): \(detail)"
         case .sessionMissing(let session):
             return "tmux session not found: \(session)"
+        case .sessionEnded(let session):
+            return "tmux session has ended: \(session)"
         }
     }
 }
@@ -60,22 +63,23 @@ public struct TmuxAgentBackend: Sendable {
 
         return try AgentSessionFiles.readAll().compactMap { session in
             guard hasSession(session.tmuxSession) else {
-                AgentSessionFiles.remove(id: session.id)
                 return nil
             }
             var live = session
             live.isAttached = attachedCount(for: session.tmuxSession) > 0
+            live.isEnded = isPaneDead(session.tmuxSession)
             return live
         }
     }
 
     public func detail(for session: AgentSessionSummary, lineLimit: Int = 180) throws -> AgentSessionDetail {
         guard hasSession(session.tmuxSession) else {
-            AgentSessionFiles.remove(id: session.id)
             throw TmuxAgentError.sessionMissing(session.tmuxSession)
         }
+        var live = session
+        live.isEnded = isPaneDead(session.tmuxSession)
         let raw = try capture(session: session, lineLimit: lineLimit)
-        return AgentSessionDetail(summary: session, transcript: Self.cleanTranscript(raw))
+        return AgentSessionDetail(summary: live, transcript: Self.cleanTranscript(raw))
     }
 
     /// Strips ANSI escape sequences, drops lines that are mostly decorative
@@ -83,17 +87,20 @@ public struct TmuxAgentBackend: Sendable {
     /// border), and collapses runs of blank lines. The chat-mirror cares
     /// about what was said, not how the terminal painted it.
     static func cleanTranscript(_ raw: String) -> String {
+        let escapePattern = "\u{001B}(?:\\[[0-?]*[ -/]*[@-~]|\\][^\u{0007}\u{001B}]*(?:\u{0007}|\u{001B}\\\\)|P[\\s\\S]*?\u{001B}\\\\|[_^X][\\s\\S]*?\u{001B}\\\\|[@-_])"
         let stripped = raw.replacingOccurrences(
-            of: "\u{1B}\\[[0-9;?]*[A-Za-z]",
+            of: escapePattern,
             with: "",
             options: .regularExpression
         )
-        let decorativeChars: Set<Character> = ["─", "━", "=", "_", "-", "│", "║", "•", "⌐"]
+        let decorativeChars: Set<Character> = [
+            "\u{2500}", "\u{2501}", "=", "_", "-", "\u{2502}", "\u{2551}", "\u{2022}", "\u{2310}",
+        ]
         let lines = stripped.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
         var out: [String] = []
         var blankRun = 0
         for raw in lines {
-            let line = String(raw)
+            let line = trimTrailingHorizontalWhitespace(String(raw))
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty {
                 blankRun += 1
@@ -113,29 +120,60 @@ public struct TmuxAgentBackend: Sendable {
         return out.joined(separator: "\n")
     }
 
+    private static func trimTrailingHorizontalWhitespace(_ line: String) -> String {
+        var end = line.endIndex
+        while end > line.startIndex {
+            let previous = line.index(before: end)
+            let character = line[previous]
+            guard character == " " || character == "\t" else { break }
+            end = previous
+        }
+        return String(line[..<end])
+    }
+
     public func send(_ text: String, to session: AgentSessionSummary) throws {
         guard hasSession(session.tmuxSession) else {
-            AgentSessionFiles.remove(id: session.id)
             throw TmuxAgentError.sessionMissing(session.tmuxSession)
         }
-        // tmux send-keys -l forwards bytes verbatim; an embedded ESC or DCS
-        // would reach the pane's input parser. Strip C0 control chars (and
-        // DEL) so chat messages can't deliver terminal escape sequences.
-        // Newlines are intentionally dropped — the explicit `Enter` send-keys
-        // call below is what submits the message.
-        let safe = String(String.UnicodeScalarView(text.unicodeScalars.filter { scalar in
-            scalar.value >= 0x20 && scalar.value != 0x7F
-        }))
+        guard !isPaneDead(session.tmuxSession) else {
+            throw TmuxAgentError.sessionEnded(session.tmuxSession)
+        }
+        let safe = Self.sanitizedPasteText(text)
         guard !safe.isEmpty else { return }
         let target = "\(session.tmuxSession):0.0"
-        _ = try run(["send-keys", "-t", target, "-l", safe])
+        let bufferName = "nudge-\(session.id)-\(UUID().uuidString)"
+
+        _ = try run(["load-buffer", "-b", bufferName, "-"], input: Data(safe.utf8))
+        defer { try? run(["delete-buffer", "-b", bufferName]) }
+
+        _ = try run(["paste-buffer", "-d", "-p", "-b", bufferName, "-t", target])
         _ = try run(["send-keys", "-t", target, "Enter"])
+    }
+
+    static func sanitizedPasteText(_ text: String) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        return String(String.UnicodeScalarView(normalized.unicodeScalars.filter { scalar in
+            switch scalar.value {
+            case 0x09, 0x0A:
+                return true
+            case 0x20...0x7E:
+                return true
+            case 0xA0...0x10FFFF:
+                return true
+            default:
+                return false
+            }
+        }))
     }
 
     public func attach(to session: AgentSessionSummary) throws {
         guard hasSession(session.tmuxSession) else {
-            AgentSessionFiles.remove(id: session.id)
             throw TmuxAgentError.sessionMissing(session.tmuxSession)
+        }
+        guard !isPaneDead(session.tmuxSession) else {
+            throw TmuxAgentError.sessionEnded(session.tmuxSession)
         }
         try runAttached(["attach-session", "-t", session.tmuxSession])
     }
@@ -151,7 +189,7 @@ public struct TmuxAgentBackend: Sendable {
 
     private func capture(session: AgentSessionSummary, lineLimit: Int) throws -> String {
         let target = "\(session.tmuxSession):0.0"
-        return try run(["capture-pane", "-t", target, "-p", "-S", "-\(lineLimit)"])
+        return try run(["capture-pane", "-t", target, "-p", "-J", "-S", "-\(lineLimit)"])
     }
 
     private func hasSession(_ name: String) -> Bool {
@@ -165,20 +203,36 @@ public struct TmuxAgentBackend: Sendable {
         return Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
     }
 
+    private func isPaneDead(_ name: String) -> Bool {
+        let target = "\(name):0.0"
+        guard let raw = try? run(["display-message", "-p", "-t", target, "#{pane_dead}"]) else {
+            return false
+        }
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+    }
+
     @discardableResult
-    private func run(_ args: [String]) throws -> String {
+    private func run(_ args: [String], input: Data? = nil) throws -> String {
         let process = Process()
         let command = Self.configureTmuxProcess(process, args: args)
 
         let stdout = Pipe()
         let stderr = Pipe()
+        let stdin = input.map { _ in Pipe() }
         process.standardOutput = stdout
         process.standardError = stderr
+        if let stdin {
+            process.standardInput = stdin
+        }
 
         do {
             try process.run()
         } catch {
             throw TmuxAgentError.tmuxUnavailable
+        }
+        if let input, let stdin {
+            stdin.fileHandleForWriting.write(input)
+            try? stdin.fileHandleForWriting.close()
         }
         process.waitUntilExit()
 

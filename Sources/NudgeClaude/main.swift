@@ -8,7 +8,7 @@ func usage() {
     fputs("""
     nudge-claude              Start a new Claude session in tmux and attach.
     nudge-claude attach [id]  Re-attach to an existing session (most recent if no id).
-    nudge-claude list         List active Claude sessions.
+    nudge-claude list         List mirrored Claude sessions.
     nudge-claude --help       Show this help.
 
     """, stderr)
@@ -21,6 +21,11 @@ func describe(_ session: AgentSessionSummary) -> String {
     return "\(session.kind.rawValue) - \(session.projectName)"
 }
 
+func status(_ session: AgentSessionSummary) -> String {
+    if session.isEnded { return "ended" }
+    return session.isAttached ? "attached" : "detached"
+}
+
 switch args.first {
 case "list":
     do {
@@ -29,7 +34,7 @@ case "list":
             print("No active sessions. Start one with: nudge-claude")
         } else {
             for session in sessions {
-                print("\(session.id)\t\(describe(session))\t\(session.tmuxSession)")
+                print("\(session.id)\t\(status(session))\t\(describe(session))\t\(session.tmuxSession)")
             }
         }
         exit(0)
