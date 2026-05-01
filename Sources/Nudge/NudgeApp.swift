@@ -13,6 +13,7 @@ struct NudgeApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let queue = PromptQueue()
+    private let activityStore = AgentActivityStore()
     private var server: PromptServer?
     private var menuBar: MenuBarController?
 
@@ -20,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         Task { @MainActor in
-            self.menuBar = MenuBarController(queue: queue)
+            self.menuBar = MenuBarController(queue: queue, activityStore: activityStore)
         }
 
         Task {
@@ -39,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func bringUpServer(port: UInt16) async throws {
         _ = try TokenFile.ensure()
-        let server = PromptServer(queue: queue, port: port)
+        let server = PromptServer(queue: queue, activityStore: activityStore, port: port)
         try await server.start()
         let bound = await server.boundPort
         try PortFile.write(port: bound)

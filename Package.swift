@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "Nudge", targets: ["Nudge"]),
         .executable(name: "nudge-hook", targets: ["NudgeHook"]),
+        .executable(name: "nudge-agent-hook", targets: ["NudgeAgentHook"]),
         .executable(name: "nudge-ask", targets: ["NudgeAsk"]),
         .executable(name: "nudge-claude", targets: ["NudgeClaude"]),
         .executable(name: "nudge-test-matching", targets: ["MatchingTestRunner"]),
@@ -29,6 +30,11 @@ let package = Package(
             name: "NudgeHook",
             dependencies: ["NudgeCore", "NudgeHookCore"],
             path: "Sources/NudgeHook"
+        ),
+        .executableTarget(
+            name: "NudgeAgentHook",
+            dependencies: ["NudgeCore"],
+            path: "Sources/NudgeAgentHook"
         ),
         .executableTarget(
             name: "NudgeAsk",

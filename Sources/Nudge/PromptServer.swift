@@ -4,14 +4,22 @@ import NudgeCore
 
 actor PromptServer {
     private let queue: PromptQueue
+    private let activityStore: AgentActivityStore
     private let requestedPort: NWEndpoint.Port
     private var listener: NWListener?
     private(set) var boundPort: UInt16 = 0
     private let timeoutSeconds: TimeInterval
     private let tokenURL: URL
 
-    init(queue: PromptQueue, port: UInt16, tokenURL: URL = TokenFile.defaultURL, timeoutSeconds: TimeInterval = 300) {
+    init(
+        queue: PromptQueue,
+        activityStore: AgentActivityStore,
+        port: UInt16,
+        tokenURL: URL = TokenFile.defaultURL,
+        timeoutSeconds: TimeInterval = 300
+    ) {
         self.queue = queue
+        self.activityStore = activityStore
         self.requestedPort = port == 0 ? .any : NWEndpoint.Port(rawValue: port)!
         self.timeoutSeconds = timeoutSeconds
         self.tokenURL = tokenURL
@@ -95,13 +103,22 @@ actor PromptServer {
     }
 
     private func respond(to req: HTTPCodec.Request, on conn: NWConnection) async {
-        guard req.method == "POST", req.path == "/prompt" || req.path == "/ask" else {
+        guard req.method == "POST" else {
             let resp = HTTPCodec.writeResponse(status: 404, contentType: "text/plain", body: Array("not found".utf8))
             await sendAndAwait(Data(resp), on: conn)
             return
         }
         guard isAuthorized(req) else {
             let resp = HTTPCodec.writeResponse(status: 401, contentType: "text/plain", body: Array("unauthorized".utf8))
+            await sendAndAwait(Data(resp), on: conn)
+            return
+        }
+        if req.path == "/agent-event" {
+            await respondToAgentEvent(req, on: conn)
+            return
+        }
+        guard req.path == "/prompt" || req.path == "/ask" else {
+            let resp = HTTPCodec.writeResponse(status: 404, contentType: "text/plain", body: Array("not found".utf8))
             await sendAndAwait(Data(resp), on: conn)
             return
         }
@@ -120,6 +137,18 @@ actor PromptServer {
             await sendAndAwait(Data(resp), on: conn)
         } catch {
             let resp = HTTPCodec.writeResponse(status: 408, contentType: "text/plain", body: Array("timeout".utf8))
+            await sendAndAwait(Data(resp), on: conn)
+        }
+    }
+
+    private func respondToAgentEvent(_ req: HTTPCodec.Request, on conn: NWConnection) async {
+        do {
+            let event = try JSONDecoder().decode(AgentHookEvent.self, from: Data(req.body))
+            await activityStore.record(event)
+            let resp = HTTPCodec.writeResponse(status: 200, contentType: "text/plain", body: Array("ok".utf8))
+            await sendAndAwait(Data(resp), on: conn)
+        } catch {
+            let resp = HTTPCodec.writeResponse(status: 400, contentType: "text/plain", body: Array("bad json".utf8))
             await sendAndAwait(Data(resp), on: conn)
         }
     }

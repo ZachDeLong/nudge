@@ -36,7 +36,11 @@ public struct TmuxAgentBackend: Sendable {
 
         let id = "\(kind.rawValue)-\(Int(Date().timeIntervalSince1970))-\(ProcessInfo.processInfo.processIdentifier)"
         let tmuxSession = "nudge-\(id)"
-        let command = ([executable] + arguments).map(Self.shellQuote).joined(separator: " ")
+        let command = ([
+            "env",
+            "NUDGE_AGENT_SESSION_ID=\(id)",
+            "NUDGE_AGENT_KIND=\(kind.rawValue)",
+        ] + [executable] + arguments).map(Self.shellQuote).joined(separator: " ")
 
         _ = try run(["new-session", "-d", "-s", tmuxSession, "-c", cwd, command])
 

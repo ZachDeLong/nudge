@@ -30,7 +30,7 @@ cd nudge
 make install
 ```
 
-Either of those builds the app, copies it to `/Applications/Nudge.app`, seeds default patterns, wires a `PreToolUse` hook into `~/.claude/settings.json`, and launches Nudge in the background.
+Either of those builds the app, copies it to `/Applications/Nudge.app`, seeds default patterns, wires Claude Code hooks into `~/.claude/settings.json`, and launches Nudge in the background.
 
 **Pre-built bundle (no build step):**
 
@@ -46,7 +46,7 @@ Then clone the repo to wire the hook into Claude Code (you only need the scripts
 git clone https://github.com/ZachDeLong/nudge.git
 cd nudge
 ./scripts/seed-patterns.sh  # creates ~/.config/nudge/patterns.txt with defaults
-./scripts/install-hook.sh   # writes the PreToolUse entry into settings.json
+./scripts/install-hook.sh   # writes Nudge hook entries into settings.json
 open -ga Nudge
 ```
 
@@ -59,7 +59,8 @@ Requirements: macOS 14+ and `jq` (the hook installer reads and rewrites `~/.clau
 Two halves:
 
 - **The app** runs as a menu bar icon. It owns an `NSStatusItem`, a popover, and a tiny localhost HTTP server. The server is how the hook talks to it.
-- **The hook** is a small Swift CLI at `Nudge.app/Contents/MacOS/nudge-hook`. Claude Code runs it via the `PreToolUse` hook. It reads the tool call from stdin, checks `patterns.txt`, and POSTs to the app with a local bearer token if there's a match. Then it blocks until you click Allow or Deny.
+- **The permission hook** is a small Swift CLI at `Nudge.app/Contents/MacOS/nudge-hook`. Claude Code runs it via `PreToolUse`. It reads the tool call from stdin, checks `patterns.txt`, and POSTs to the app with a local bearer token if there's a match. Then it blocks until you click Allow or Deny.
+- **The agent hook** is a non-blocking Swift CLI at `Nudge.app/Contents/MacOS/nudge-agent-hook`. Claude Code runs it for lifecycle/tool events like `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, and `Stop`, so Nudge can show whether a mirrored session is thinking, using a tool, waiting, idle, failed, or ended.
 
 If the app isn't running when the hook fires, the hook auto-launches it via `open -ga Nudge`. If anything fails, the hook exits silently and Claude falls back to its normal terminal prompt.
 
@@ -170,7 +171,7 @@ Detach from a session without stopping it: `Ctrl-b` then `d` (the standard tmux 
 
 ### Mirroring in the menu bar
 
-Click the Nudge menu bar icon with no permission prompt active. The idle panel shows a session picker, the recent transcript, and a reply box.
+Click the Nudge menu bar icon with no permission prompt active. The idle panel shows a session picker, current agent state, the recent transcript, and a reply box.
 
 ![Agent sessions popover](./docs/img/agent-sessions.png)
 
@@ -180,6 +181,7 @@ Click the Nudge menu bar icon with no permission prompt active. The idle panel s
 - **Stop (⏹)** kills the tmux pane and removes the session record.
 - **Refresh (↻)** pulls the latest transcript. The panel also polls every 1.5s while open.
 - **Send** with Enter. Shift+Enter inserts a newline.
+- **Status** comes from Claude Code hooks when available, so Nudge can show tool use and idle/waiting state without guessing from terminal text.
 
 Messages are forwarded to the tmux pane via a bracketed paste buffer, so multiline prompts survive and the terminal Claude session keeps its cwd, project context, skills, plugins, MCPs, and hooks.
 

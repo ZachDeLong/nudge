@@ -43,6 +43,22 @@ public enum NudgeClient {
         }
     }
 
+    public static func postAgentEvent(
+        _ event: AgentHookEvent,
+        port: UInt16
+    ) throws {
+        let body = try JSONEncoder().encode(event)
+        let response = try post(path: "/agent-event", port: port, body: body)
+        switch response.status {
+        case 200:
+            return
+        case 401:
+            throw NudgeClientError.unauthorized
+        default:
+            throw NudgeClientError.unexpectedStatus(response.status)
+        }
+    }
+
     private static func readPort(from url: URL) -> UInt16? {
         try? PortFile.read(from: url)
     }

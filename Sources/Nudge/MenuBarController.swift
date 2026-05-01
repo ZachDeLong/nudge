@@ -10,12 +10,14 @@ import NudgeCore
 final class AgentChatStore: ObservableObject {
     @Published var sessions: [AgentSessionSummary] = []
     @Published var detail: AgentSessionDetail?
+    @Published var activities: [AgentActivitySnapshot] = []
     @Published var error: String?
 }
 
 @MainActor
 final class MenuBarController: NSObject {
     private let queue: PromptQueue
+    private let activityStore: AgentActivityStore
     private let statusItem: NSStatusItem
     private let panel: PromptPanel
     private let sessionAllow = SessionAllowList()
@@ -29,8 +31,9 @@ final class MenuBarController: NSObject {
     private var settings: Prefs = .load()
     private let agentChat = AgentChatStore()
 
-    init(queue: PromptQueue) {
+    init(queue: PromptQueue, activityStore: AgentActivityStore) {
         self.queue = queue
+        self.activityStore = activityStore
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.panel = PromptPanel()
         super.init()
@@ -432,7 +435,8 @@ final class MenuBarController: NSObject {
         agentRefreshSequence += 1
         let mySeq = agentRefreshSequence
         Task { [weak self] in
-            let result = await Task.detached { () async -> Result<([AgentSessionSummary], AgentSessionDetail?), Error> in
+            let activityStore = self?.activityStore
+            let result = await Task.detached { () async -> Result<([AgentSessionSummary], AgentSessionDetail?, [AgentActivitySnapshot]), Error> in
                 do {
                     let backend = TmuxAgentBackend()
                     let sessions = try backend.listSessions()
@@ -442,7 +446,8 @@ final class MenuBarController: NSObject {
                     if let selected {
                         detail = try? backend.detail(for: selected)
                     }
-                    return .success((sessions, detail))
+                    let activities = await activityStore?.snapshots() ?? []
+                    return .success((sessions, detail, activities))
                 } catch {
                     return .failure(error)
                 }
@@ -455,6 +460,7 @@ final class MenuBarController: NSObject {
                 switch result {
                 case .success(let payload):
                     self.agentChat.sessions = payload.0
+                    self.agentChat.activities = payload.2
                     if let detail = payload.1 {
                         self.agentChat.detail = detail
                     } else if !payload.0.contains(where: { $0.id == self.agentChat.detail?.id }) {

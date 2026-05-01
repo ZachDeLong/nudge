@@ -362,6 +362,9 @@ private struct AgentSessionsPanel: View {
                 .pickerStyle(.menu)
 
                 if let detail = store.detail {
+                    if let activity = activity(for: detail.summary) {
+                        activityRow(activity)
+                    }
                     transcriptView(detail.transcript)
 
                     if detail.summary.isEnded {
@@ -378,6 +381,62 @@ private struct AgentSessionsPanel: View {
                     .foregroundColor(.secondary)
                     .lineLimit(2)
             }
+        }
+    }
+
+    private func activity(for session: AgentSessionSummary) -> AgentActivitySnapshot? {
+        store.activities.first(where: { $0.nudgeSessionID == session.id })
+            ?? store.activities.first(where: { $0.cwd == Optional(session.cwd) })
+    }
+
+    @ViewBuilder
+    private func activityRow(_ activity: AgentActivitySnapshot) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(activityColor(activity.state))
+                .frame(width: 7, height: 7)
+            Text(activityText(activity))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+        }
+    }
+
+    private func activityText(_ activity: AgentActivitySnapshot) -> String {
+        switch activity.state {
+        case .usingTool:
+            let name = activity.currentToolName ?? "Tool"
+            if let summary = activity.currentToolSummary, !summary.isEmpty {
+                return "\(name): \(summary)"
+            }
+            return "\(name) running"
+        case .thinking:
+            return "Thinking"
+        case .waitingForInput:
+            return "Waiting for input"
+        case .idle:
+            return "Idle"
+        case .failed:
+            return activity.lastError ?? "Failed"
+        case .ended:
+            return "Ended"
+        case .unknown:
+            return activity.lastEventName
+        }
+    }
+
+    private func activityColor(_ state: AgentActivityState) -> Color {
+        switch state {
+        case .usingTool, .thinking:
+            return .accentColor
+        case .waitingForInput:
+            return .orange
+        case .failed:
+            return .red
+        case .idle, .ended, .unknown:
+            return .secondary.opacity(0.7)
         }
     }
 
