@@ -52,7 +52,21 @@ open -ga Nudge
 
 Requirements: macOS 14+ and `jq` (the hook installer reads and rewrites `~/.claude/settings.json`). Source builds also need Xcode Command Line Tools (no full Xcode required). Install jq with `brew install jq`. The chat-mirror feature also needs `tmux` (`brew install tmux`).
 
-`make install` also symlinks `nudge-claude` into a writable directory in your PATH (it tries `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, then `~/bin`), so you can just run `nudge-claude` from anywhere.
+`make install` also symlinks `nudge-claude` and `nudge-update` into a writable directory in your PATH (it tries `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, then `~/bin`), so you can just run them from anywhere.
+
+## Updates
+
+`nudge-update` checks GitHub releases for a newer build:
+
+```sh
+nudge-update           # print current vs latest, exit 0
+nudge-update --check   # exit 1 if an update is available (handy in scripts)
+nudge-update --apply   # download Nudge.app.zip, swap, relaunch
+```
+
+Releases are produced by `.github/workflows/release.yml` on `v*` tag pushes. The workflow refuses to publish unless `Resources-Info.plist`'s `CFBundleShortVersionString` matches the tag, so bump the plist before tagging.
+
+Sparkle is on the roadmap once the project earns code signing.
 
 ## How it works
 

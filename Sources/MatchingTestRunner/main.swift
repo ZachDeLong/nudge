@@ -488,6 +488,34 @@ do {
     }
 }
 
+// MARK: Version — semver parsing
+
+expect(Version("1.2.3")?.description, "1.2.3", "version: parses MAJOR.MINOR.PATCH")
+expect(Version("v1.2.3")?.description, "1.2.3", "version: strips v prefix")
+expect(Version("V0.1.0")?.description, "0.1.0", "version: strips V prefix")
+expect(Version("1.2.3-beta")?.description, "1.2.3", "version: drops pre-release suffix")
+expect(Version("1.2.3+build7")?.description, "1.2.3", "version: drops build metadata")
+expect(Version(" v1.2.3 ")?.description, "1.2.3", "version: trims whitespace")
+expectNil(Version("1.2"), "version: 1.2 is not three parts")
+expectNil(Version("1.2.x"), "version: non-int component")
+expectNil(Version("garbage"), "version: garbage")
+
+if let a = Version("1.2.3"), let b = Version("1.2.4") {
+    if a < b { passed += 1 } else { failures.append("✗ version: 1.2.3 < 1.2.4") }
+}
+if let a = Version("1.2.3"), let b = Version("1.3.0") {
+    if a < b { passed += 1 } else { failures.append("✗ version: 1.2.3 < 1.3.0") }
+}
+if let a = Version("1.2.3"), let b = Version("2.0.0") {
+    if a < b { passed += 1 } else { failures.append("✗ version: 1.2.3 < 2.0.0") }
+}
+if let a = Version("1.2.3"), let b = Version("v1.2.3") {
+    if a == b { passed += 1 } else { failures.append("✗ version: 1.2.3 == v1.2.3") }
+}
+if let a = Version("0.10.0"), let b = Version("0.9.0") {
+    if a > b { passed += 1 } else { failures.append("✗ version: 0.10.0 > 0.9.0 (numeric, not lexical)") }
+}
+
 // MARK: report
 
 print("\(passed) passed, \(failures.count) failed")

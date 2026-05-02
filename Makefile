@@ -25,6 +25,7 @@ install: build
 	cp $(BUILD_DIR)/nudge-agent-hook $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-agent-hook
 	cp $(BUILD_DIR)/nudge-ask $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-ask
 	cp $(BUILD_DIR)/nudge-claude $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-claude
+	cp $(BUILD_DIR)/nudge-update $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-update
 	cp Resources-Info.plist $(BUILD_DIR)/Nudge.app/Contents/Info.plist
 	@echo "→ Copying to /Applications…"
 	-pkill -x Nudge 2>/dev/null || true

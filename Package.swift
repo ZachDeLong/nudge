@@ -10,6 +10,7 @@ let package = Package(
         .executable(name: "nudge-agent-hook", targets: ["NudgeAgentHook"]),
         .executable(name: "nudge-ask", targets: ["NudgeAsk"]),
         .executable(name: "nudge-claude", targets: ["NudgeClaude"]),
+        .executable(name: "nudge-update", targets: ["NudgeUpdate"]),
         .executable(name: "nudge-test-matching", targets: ["MatchingTestRunner"]),
     ],
     targets: [
@@ -45,6 +46,11 @@ let package = Package(
             name: "NudgeClaude",
             dependencies: ["NudgeCore"],
             path: "Sources/NudgeClaude"
+        ),
+        .executableTarget(
+            name: "NudgeUpdate",
+            dependencies: ["NudgeCore"],
+            path: "Sources/NudgeUpdate"
         ),
         .executableTarget(
             name: "MatchingTestRunner",
