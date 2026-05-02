@@ -3,6 +3,8 @@ import Network
 import NudgeCore
 
 actor PromptServer {
+    private static let maxAgentEventBodyBytes = 32 * 1024
+
     private let queue: PromptQueue
     private let activityStore: AgentActivityStore
     private let requestedPort: NWEndpoint.Port
@@ -142,6 +144,12 @@ actor PromptServer {
     }
 
     private func respondToAgentEvent(_ req: HTTPCodec.Request, on conn: NWConnection) async {
+        guard req.body.count <= Self.maxAgentEventBodyBytes else {
+            let resp = HTTPCodec.writeResponse(status: 413, contentType: "text/plain", body: Array("payload too large".utf8))
+            await sendAndAwait(Data(resp), on: conn)
+            return
+        }
+
         do {
             let event = try JSONDecoder().decode(AgentHookEvent.self, from: Data(req.body))
             await activityStore.record(event)

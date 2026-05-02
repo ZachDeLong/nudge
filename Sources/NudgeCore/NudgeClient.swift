@@ -45,10 +45,11 @@ public enum NudgeClient {
 
     public static func postAgentEvent(
         _ event: AgentHookEvent,
-        port: UInt16
+        port: UInt16,
+        ioTimeout: TimeInterval = 1.0
     ) throws {
         let body = try JSONEncoder().encode(event)
-        let response = try post(path: "/agent-event", port: port, body: body)
+        let response = try post(path: "/agent-event", port: port, body: body, ioTimeout: ioTimeout)
         switch response.status {
         case 200:
             return
@@ -98,7 +99,12 @@ public enum NudgeClient {
         return nil
     }
 
-    private static func post(path: String, port: UInt16, body: Data) throws -> HTTPCodec.Response {
+    private static func post(
+        path: String,
+        port: UInt16,
+        body: Data,
+        ioTimeout: TimeInterval? = nil
+    ) throws -> HTTPCodec.Response {
         let token: String
         do {
             token = try TokenFile.read()
@@ -107,7 +113,8 @@ public enum NudgeClient {
         }
         let raw = try sendRequestAndReadResponse(
             port: port,
-            request: makePostRequest(path: path, port: port, body: body, token: token)
+            request: makePostRequest(path: path, port: port, body: body, token: token),
+            ioTimeout: ioTimeout
         )
         do {
             return try HTTPCodec.parseResponse(raw)
@@ -133,10 +140,18 @@ public enum NudgeClient {
         return request
     }
 
-    private static func sendRequestAndReadResponse(port: UInt16, request: Data) throws -> Data {
+    private static func sendRequestAndReadResponse(
+        port: UInt16,
+        request: Data,
+        ioTimeout: TimeInterval? = nil
+    ) throws -> Data {
         let s = socket(AF_INET, SOCK_STREAM, 0)
         guard s >= 0 else { throw NudgeClientError.ioFailure }
         defer { close(s) }
+
+        if let ioTimeout {
+            setSocketTimeout(ioTimeout, on: s)
+        }
 
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
@@ -172,5 +187,19 @@ public enum NudgeClient {
             response.append(contentsOf: buf[0..<n])
         }
         return response
+    }
+
+    private static func setSocketTimeout(_ seconds: TimeInterval, on socket: Int32) {
+        let clamped = max(seconds, 0.001)
+        let wholeSeconds = Int(clamped)
+        let microseconds = Int32((clamped - TimeInterval(wholeSeconds)) * 1_000_000)
+        var timeout = timeval(tv_sec: wholeSeconds, tv_usec: microseconds)
+        let length = socklen_t(MemoryLayout<timeval>.size)
+        withUnsafePointer(to: &timeout) { ptr in
+            ptr.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<timeval>.size) { raw in
+                _ = setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, raw, length)
+                _ = setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, raw, length)
+            }
+        }
     }
 }

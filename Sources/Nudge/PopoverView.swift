@@ -385,8 +385,17 @@ private struct AgentSessionsPanel: View {
     }
 
     private func activity(for session: AgentSessionSummary) -> AgentActivitySnapshot? {
-        store.activities.first(where: { $0.nudgeSessionID == session.id })
-            ?? store.activities.first(where: { $0.cwd == Optional(session.cwd) })
+        if let activity = store.activities.first(where: { $0.nudgeSessionID == session.id }) {
+            return activity
+        }
+
+        let sameCwdSessions = store.sessions.filter { $0.cwd == session.cwd }
+        guard sameCwdSessions.count == 1 else { return nil }
+
+        let sameCwdActivities = store.activities.filter {
+            ($0.nudgeSessionID ?? "").isEmpty && $0.cwd == session.cwd
+        }
+        return sameCwdActivities.count == 1 ? sameCwdActivities[0] : nil
     }
 
     @ViewBuilder

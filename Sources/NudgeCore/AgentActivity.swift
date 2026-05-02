@@ -146,6 +146,9 @@ public struct AgentActivitySnapshot: Codable, Equatable, Sendable {
 
     private static func notificationState(message: String?) -> AgentActivityState {
         let lowered = (message ?? "").lowercased()
+        // Claude notification payloads are human-readable, so this is a soft
+        // heuristic rather than a protocol guarantee. Unknown wording falls
+        // back to thinking instead of blocking the UI in a waiting state.
         if lowered.contains("waiting") || lowered.contains("input") || lowered.contains("permission") {
             return .waitingForInput
         }
@@ -154,9 +157,20 @@ public struct AgentActivitySnapshot: Codable, Equatable, Sendable {
 }
 
 public actor AgentActivityStore {
-    private var byKey: [String: AgentActivitySnapshot] = [:]
+    public static let defaultEndedSnapshotTTL: TimeInterval = 24 * 60 * 60
+    public static let defaultMaxSnapshots = 200
 
-    public init() {}
+    private var byKey: [String: AgentActivitySnapshot] = [:]
+    private let endedSnapshotTTL: TimeInterval
+    private let maxSnapshots: Int
+
+    public init(
+        endedSnapshotTTL: TimeInterval = Self.defaultEndedSnapshotTTL,
+        maxSnapshots: Int = Self.defaultMaxSnapshots
+    ) {
+        self.endedSnapshotTTL = max(0, endedSnapshotTTL)
+        self.maxSnapshots = max(1, maxSnapshots)
+    }
 
     public func record(_ event: AgentHookEvent) {
         let key = key(for: event)
@@ -166,10 +180,12 @@ public actor AgentActivityStore {
         } else {
             byKey[key] = AgentActivitySnapshot(event: event)
         }
+        prune(referenceDate: event.occurredAt)
     }
 
-    public func snapshots() -> [AgentActivitySnapshot] {
-        Array(byKey.values)
+    public func snapshots(now: Date = Date()) -> [AgentActivitySnapshot] {
+        prune(referenceDate: now)
+        return byKey.values.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     private func key(for event: AgentHookEvent) -> String {
@@ -177,5 +193,21 @@ public actor AgentActivityStore {
         if let id = event.claudeSessionID, !id.isEmpty { return "claude:\(id)" }
         if let cwd = event.cwd, !cwd.isEmpty { return "cwd:\(cwd)" }
         return "event:\(event.id)"
+    }
+
+    private func prune(referenceDate: Date) {
+        guard !byKey.isEmpty else { return }
+        byKey = byKey.filter { _, snapshot in
+            guard snapshot.state == .ended else { return true }
+            return referenceDate.timeIntervalSince(snapshot.updatedAt) <= endedSnapshotTTL
+        }
+
+        guard byKey.count > maxSnapshots else { return }
+        let sortedKeys = byKey
+            .sorted { $0.value.updatedAt < $1.value.updatedAt }
+            .map(\.key)
+        for key in sortedKeys.prefix(byKey.count - maxSnapshots) {
+            byKey.removeValue(forKey: key)
+        }
     }
 }
