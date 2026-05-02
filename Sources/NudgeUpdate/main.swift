@@ -148,6 +148,8 @@ do {
     exit(2)
 }
 
+refreshPathSymlinks()
+
 print("Relaunching Nudge…")
 let open = Process()
 open.launchPath = "/usr/bin/open"
@@ -159,6 +161,41 @@ try? FileManager.default.removeItem(at: stagingDir)
 print("✓ Updated to Nudge \(latest).")
 
 // MARK: - Helpers
+
+/// Mirrors `scripts/link-cli.sh`. After a swap, refresh the PATH symlinks so
+/// users upgrading from a pre-1.2.0 install still get the bare command names
+/// (and so any newly-bundled CLIs land on PATH on the next release).
+func refreshPathSymlinks() {
+    let names = ["nudge-claude", "nudge-update"]
+    let candidates = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path,
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("bin").path,
+    ]
+    let appBin = "\(appPath)/Contents/MacOS"
+
+    var dest: String?
+    for dir in candidates {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else { continue }
+        if FileManager.default.isWritableFile(atPath: dir) { dest = dir; break }
+    }
+    guard let dest = dest else { return }
+
+    for name in names {
+        let target = "\(appBin)/\(name)"
+        guard FileManager.default.isExecutableFile(atPath: target) else { continue }
+        let link = "\(dest)/\(name)"
+        // Replace any existing entry — link, regular file, or stale path.
+        try? FileManager.default.removeItem(atPath: link)
+        do {
+            try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: target)
+        } catch {
+            eprint("  warning: failed to symlink \(link): \(error.localizedDescription)")
+        }
+    }
+}
 
 func downloadSync(_ url: URL, to dest: URL) -> Bool {
     let semaphore = DispatchSemaphore(value: 0)
