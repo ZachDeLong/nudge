@@ -478,10 +478,19 @@ final class MenuBarController: NSObject {
                         self.agentChat.detail = nil
                     }
                     self.agentChat.error = nil
+                    self.refitAgentPanelAfterStoreUpdate()
                 case .failure(let error):
                     self.agentChat.error = String(describing: error)
                 }
             }
+        }
+    }
+
+    private func refitAgentPanelAfterStoreUpdate() {
+        guard panel.isVisible, currentPrompt == nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.panel.isVisible, self.currentPrompt == nil else { return }
+            self.panel.refit(anchorTo: self.statusItem.button, makeKey: self.agentChat.detail != nil)
         }
     }
 
@@ -571,6 +580,26 @@ final class PromptPanel {
             content
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         )
+        refit(anchorTo: nil, makeKey: (panel as? KeyablePanel)?.allowsKey ?? false)
+    }
+
+    /// Re-measures SwiftUI content after ObservableObject changes. This keeps
+    /// async chat-detail loads from being clipped by the shorter placeholder
+    /// panel that was measured before tmux capture finished.
+    func refit(anchorTo button: NSStatusBarButton?, makeKey: Bool = false) {
+        guard panel.isVisible else { return }
+        if let keyable = panel as? KeyablePanel {
+            keyable.allowsKey = makeKey
+        }
+
+        hosting.view.layoutSubtreeIfNeeded()
+        panel.setContentSize(fittingContentSize())
+        if let button {
+            panel.setFrameOrigin(computeOrigin(anchorTo: button))
+        }
+        if makeKey, !panel.isKeyWindow {
+            panel.makeKey()
+        }
     }
 
     func show(content: PopoverView, anchorTo button: NSStatusBarButton?, makeKey: Bool = false) {
@@ -583,12 +612,7 @@ final class PromptPanel {
         // fittingSize keeps the panel matched to the rendered content (so
         // centering math is honest) and lets the height adapt to whether a
         // command box / queue badge is showing.
-        hosting.view.layoutSubtreeIfNeeded()
-        let intrinsic = hosting.view.fittingSize
-        let size = NSSize(
-            width: intrinsic.width  > 1 ? intrinsic.width  : Self.fallbackContentSize.width,
-            height: intrinsic.height > 1 ? intrinsic.height : Self.fallbackContentSize.height
-        )
+        let size = fittingContentSize()
         panel.setContentSize(size)
 
         let finalOrigin = computeOrigin(anchorTo: button)
@@ -620,6 +644,15 @@ final class PromptPanel {
             panel.animator().alphaValue = 1
             panel.animator().setFrameOrigin(finalOrigin)
         })
+    }
+
+    private func fittingContentSize() -> NSSize {
+        hosting.view.layoutSubtreeIfNeeded()
+        let intrinsic = hosting.view.fittingSize
+        return NSSize(
+            width: intrinsic.width  > 1 ? intrinsic.width  : Self.fallbackContentSize.width,
+            height: intrinsic.height > 1 ? intrinsic.height : Self.fallbackContentSize.height
+        )
     }
 
     func hide() {
