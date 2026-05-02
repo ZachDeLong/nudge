@@ -44,6 +44,12 @@ final class HTTPCodecTests: XCTestCase {
         XCTAssertTrue(s.hasPrefix("HTTP/1.1 401 Unauthorized\r\n"))
     }
 
+    func testWritesPayloadTooLargeResponse() {
+        let bytes = HTTPCodec.writeResponse(status: 413, contentType: "text/plain", body: Array("payload too large".utf8))
+        let s = String(bytes: bytes, encoding: .utf8)!
+        XCTAssertTrue(s.hasPrefix("HTTP/1.1 413 Payload Too Large\r\n"))
+    }
+
     func testParsesHTTPResponse() throws {
         let raw = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"decision\":\"allow\"}"
         let resp = try HTTPCodec.parseResponse(Data(raw.utf8))

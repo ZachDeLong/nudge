@@ -123,6 +123,30 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertTrue(afterTTL.isEmpty)
     }
 
+    func testStorePrunesOldestSnapshotsOverMaxCount() async {
+        let store = AgentActivityStore(maxSnapshots: 2)
+
+        await store.record(event(
+            "PreToolUse",
+            nudgeSessionID: "claude-1",
+            occurredAt: Date(timeIntervalSince1970: 1)
+        ))
+        await store.record(event(
+            "PreToolUse",
+            nudgeSessionID: "claude-2",
+            occurredAt: Date(timeIntervalSince1970: 2)
+        ))
+        await store.record(event(
+            "PreToolUse",
+            nudgeSessionID: "claude-3",
+            occurredAt: Date(timeIntervalSince1970: 3)
+        ))
+
+        let snapshots = await store.snapshots()
+
+        XCTAssertEqual(snapshots.map(\.nudgeSessionID), ["claude-3", "claude-2"])
+    }
+
     private func event(
         _ eventName: String,
         nudgeSessionID: String? = "claude-1",

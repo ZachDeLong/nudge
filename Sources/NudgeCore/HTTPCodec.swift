@@ -88,6 +88,7 @@ public enum HTTPCodec {
         case 401: reason = "Unauthorized"
         case 404: reason = "Not Found"
         case 408: reason = "Request Timeout"
+        case 413: reason = "Payload Too Large"
         case 500: reason = "Internal Server Error"
         default:  reason = "OK"
         }

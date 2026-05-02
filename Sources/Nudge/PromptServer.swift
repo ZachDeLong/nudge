@@ -4,6 +4,7 @@ import NudgeCore
 
 actor PromptServer {
     private static let maxAgentEventBodyBytes = 32 * 1024
+    private static let maxRequestBytes = 1024 * 1024
 
     private let queue: PromptQueue
     private let activityStore: AgentActivityStore
@@ -78,6 +79,12 @@ actor PromptServer {
             }
             if chunk.isEmpty { break readLoop }
             buf.append(contentsOf: chunk)
+            if buf.count > Self.maxRequestBytes {
+                let resp = HTTPCodec.writeResponse(status: 413, contentType: "text/plain", body: Array("payload too large".utf8))
+                await sendAndAwait(Data(resp), on: connection)
+                connection.cancel()
+                return
+            }
             do {
                 let req = try HTTPCodec.parseRequest(buf)
                 await respond(to: req, on: connection)

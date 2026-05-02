@@ -389,6 +389,8 @@ private struct AgentSessionsPanel: View {
             return activity
         }
 
+        // Recovery path for manually wired/older hooks that did not inherit
+        // NUDGE_AGENT_SESSION_ID. Only use cwd when it is unambiguous.
         let sameCwdSessions = store.sessions.filter { $0.cwd == session.cwd }
         guard sameCwdSessions.count == 1 else { return nil }
 
