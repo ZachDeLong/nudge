@@ -165,8 +165,8 @@ public actor AgentActivityStore {
     private let maxSnapshots: Int
 
     public init(
-        endedSnapshotTTL: TimeInterval = Self.defaultEndedSnapshotTTL,
-        maxSnapshots: Int = Self.defaultMaxSnapshots
+        endedSnapshotTTL: TimeInterval = AgentActivityStore.defaultEndedSnapshotTTL,
+        maxSnapshots: Int = AgentActivityStore.defaultMaxSnapshots
     ) {
         self.endedSnapshotTTL = max(0, endedSnapshotTTL)
         self.maxSnapshots = max(1, maxSnapshots)
