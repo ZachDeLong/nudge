@@ -34,8 +34,16 @@ jq -e . "$SETTINGS" > /dev/null
 BACKUP="$SETTINGS.bak.$(date +%s)"
 cp "$SETTINGS" "$BACKUP"
 
+# Prune old backups: keep the 5 most recent. Without this, every install
+# leaves another `settings.json.bak.NNNN` behind forever. Bash 3.2 (macOS
+# default) lacks `mapfile`, so this stays line-oriented.
+KEEP=5
+ls -1t "$SETTINGS".bak.* 2>/dev/null | tail -n "+$((KEEP + 1))" | while IFS= read -r OLD; do
+    rm -f "$OLD"
+done
+
 # Count active patterns for the success message (skip comments and blanks).
-PATTERN_COUNT=$(grep -v '^[[:space:]]*#' "$PATTERNS" | grep -v '^[[:space:]]*$' | wc -l | tr -d ' ')
+PATTERN_COUNT=$(grep -cE '^[^#[:space:]].*' "$PATTERNS" || true)
 
 # Install one PreToolUse entry with a tool-name regex matcher for permission
 # prompts. Claude Code's `matcher` field filters by tool name only, so we

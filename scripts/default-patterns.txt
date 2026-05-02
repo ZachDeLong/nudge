@@ -1,30 +1,5 @@
-# Nudge — opt-in patterns
-# One Claude Code permission rule per line. Lines starting with # are ignored.
-# The hook re-reads this file on every call, so changes take effect immediately.
-# Run `make sync-patterns` only to refresh the install message.
-#
-# Each pattern below will trigger Nudge's popover instead of Claude's
-# normal terminal prompt. Anything not on this list uses normal flow.
-#
-# Bash:
-#   Bash(<prefix>:*)  — command starts with <prefix>     e.g. Bash(git push:*)
-#   Bash(*<infix>*)   — command contains <infix>         e.g. Bash(*--force*)
-#   Bash(<exact>)     — command equals <exact>           e.g. Bash(git push)
-#
-# File-based tools (Edit, Write, Read, MultiEdit, NotebookEdit) — match on
-# tool_input.file_path with shell-style globs:
-#   *   matches any chars except `/`
-#   **  matches any chars including `/` (recursive)
-#   Edit(/etc/**)             — anywhere under /etc
-#   Write(**/.env*)           — any .env-prefixed file
-#   Edit(/Users/**/.claude/**) — any user's Claude config tree
-#
-# MCP tools — match by tool name (the `mcp__` prefix is implied by `Mcp(...)`):
-#   Mcp(*)                              — every MCP tool
-#   Mcp(playwright__*)                  — every tool from the playwright server
-#   Mcp(computer-use__request_access)   — one specific tool
-# "Always allow" promotes exact `Mcp(server__tool)` patterns to
-# `mcp__server__tool` in permissions.allow. Globs aren't promotable.
+# Nudge — opt-in patterns. Edit and save; the hook re-reads on every call.
+# Lines starting with # are ignored. Full syntax: docs/patterns.md.
 
 Bash(git push:*)
 Bash(rm:*)

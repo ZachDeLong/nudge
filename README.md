@@ -68,56 +68,16 @@ On first launch, Nudge creates `~/.config/nudge/token` with a random local beare
 
 ## Patterns
 
-`~/.config/nudge/patterns.txt` controls everything. One Claude Code permission rule per line. The hook re-reads it on every call, so edits take effect immediately.
+`~/.config/nudge/patterns.txt` is the opt-in list. One rule per line; the hook re-reads it on every call, so edits take effect immediately.
 
 ```
-# Bash
-Bash(git push:*)        # command starts with `git push`
-Bash(rm:*)              # command starts with `rm`
-Bash(*--force*)         # command contains --force anywhere
-Bash(git rebase)        # exact match
-
-# File-based tools (Edit, Write, Read, MultiEdit, NotebookEdit)
-Edit(/etc/**)               # any file under /etc
-Write(**/.env*)             # any .env-something file, anywhere
-Edit(/Users/**/.claude/**)  # any user's claude config
+Bash(git push:*)        # prefix
+Bash(*--force*)         # infix (deny-leaning, won't promote)
+Edit(/etc/**)           # path glob
+Mcp(playwright__*)      # MCP server-wide
 ```
 
-`*` matches a single path segment; `**` matches across slashes. Bash supports prefix (`x:*`), infix (`*x*`), and exact match.
-
-MCP tools use a `Mcp(...)` wrapper. The `mcp__` prefix is implied:
-
-```
-Mcp(*)                              # any MCP tool
-Mcp(playwright__*)                  # any tool from the playwright server
-Mcp(computer-use__request_access)   # one specific tool
-```
-
-Promoting an exact `Mcp(server__tool)` pattern via "Always allow" writes `mcp__server__tool` to `permissions.allow`. Globs aren't promotable (Claude Code's permission format can't express MCP wildcards beyond whole-server allow).
-
-Chained Bash calls match too. The hook tokenizes the command on `&&`, `||`, `;`, `|`, and `&` (respecting quotes, `$(...)` substitutions, and `$((...))` arithmetic), then checks each segment. Subshell `(...)` and brace `{...;}` wrappers are peeled and re-checked. So `Bash(git push:*)` fires on `cd ~/repo && git push`, and `Bash(rm:*)` fires on `(rm -rf foo); ls` — the way agents (and humans) actually run things.
-
-Prefix patterns match at token boundaries: `Bash(rm:*)` catches `rm` and `rm -rf foo` but not `rmdir`. Infix patterns ignore case, quote characters, and backslash escapes, and inline the bodies of `$(...)` / backticks: `Bash(*--force*)` catches `--FORCE`, `--for""ce`, `git push --for\ce`, and `git push $(echo --force)`. Determined adversarial inputs (env-var split-and-reassemble, `printf '\xNN'` hex escapes, `eval`, `base64 -d`) aren't normalized — Nudge's threat model is agent-accident, not adversarial bypass.
-
-When you install, Nudge also imports `Bash()`-style rules from your existing `permissions.ask` array in `~/.claude/settings.json`, plus any bare `mcp__server__tool` rules (which get wrapped as `Mcp(server__tool)`). So if you've already told Claude Code to ask about `git push:*` or `mcp__playwright__browser_evaluate`, Nudge picks them up automatically. Run `make import-permissions` later to merge in new ones.
-
-## "Always allow"
-
-Each popover has a `⋯` button next to Allow with two options:
-
-- **Allow for this session.** Adds the exact command to an in-memory list, won't ask again until you restart Nudge.
-- **Always allow this command.** Promotes the matched pattern (e.g. `Bash(git push:*)`) into your `permissions.allow`. Claude auto-allows the whole class going forward; Nudge stops prompting.
-
-### Why infix patterns can't be promoted
-
-Promoting a pattern adds it to `permissions.allow`, so Claude auto-approves the whole class going forward. That's the right move for prefix patterns like `Bash(git push:*)` — you explicitly opted into "anything starting with `git push`."
-
-Infix patterns are deny-leaning. You wrote `Bash(*--force*)` because you want to be asked any time `--force` appears. Promoting it would mean "auto-allow any command containing `--force`" — the opposite of the intent. So:
-
-- The "Always allow" menu is hidden on infix matches; only Allow / Deny show.
-- When a command matches both an infix and a prefix pattern, the infix wins. If you later promote `Bash(git push:*)` from a regular `git push origin main`, the next `git push --force` will still trigger a prompt, because the infix match takes priority.
-
-The hook's matcher returns infix hits before promotable prefix/exact hits for exactly this reason.
+Full syntax, the chained-command and quote-normalization rules, "Always allow" promotion, and the import-from-`permissions.ask` flow are in [docs/patterns.md](docs/patterns.md).
 
 ## Settings
 
