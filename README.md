@@ -1,6 +1,6 @@
 # Nudge
 
-A macOS menu bar app for Claude Code permission prompts. When Claude wants to run something risky like `git push --force`, Nudge pops a small panel out of the menu bar instead of asking back in the terminal. Click Allow from wherever you are.
+A macOS menu bar app for Claude Code permission prompts. When Claude pauses to ask before running something (say a `git push --force`, or an edit to a config file), Nudge pops a small panel out of the menu bar instead of asking back in the terminal. Click Allow from wherever you are.
 
 ![Permission popover](./docs/img/permission.png)
 
@@ -10,9 +10,9 @@ Experimental: `nudge-claude` can launch Claude Code inside a tmux session that N
 
 ## Why I built it
 
-Half the time im developing I run Claude Code on just my Mac screen. When some permission comes up, auto mode is supposed to stop and ask. But the prompt shows up in whichever terminal Claude is running in, and if I'm testing the app it just built, I don't see it for thirty seconds. Nudge surfaces those moments in the menu bar so I can answer without hunting.
+Half the time im developing I run Claude Code on just my Mac screen. When Claude pauses to ask permission, the prompt shows up in whichever terminal Claude is running in. If I'm testing the app it just built, I don't see it for thirty seconds. Nudge surfaces those moments in the menu bar so I can answer without hunting.
 
-It's a quality-of-life thing, not a security tool. When you're on one screen, you just don't want to keep tabbing back to the terminal to click Allow. You list patterns in `~/.config/nudge/patterns.txt`. Anything matching pops up; anything else goes through the normal Claude Code flow.
+It's a quality-of-life thing, not a security tool. When you're on one screen, you just don't want to keep tabbing back to the terminal to click Allow. Works in any Claude Code permission mode — default, accept-edits, plan, auto — whenever a tool call matches a pattern in `~/.config/nudge/patterns.txt`. Anything matching pops up; anything else goes through the normal Claude Code flow.
 
 ## Install
 
