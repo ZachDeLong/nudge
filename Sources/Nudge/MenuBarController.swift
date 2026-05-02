@@ -339,7 +339,7 @@ final class MenuBarController: NSObject {
         // allows the whole class of commands going forward, not just this exact
         // string. Fall back to `Bash(<exact>)` if no matched pattern was sent
         // (older hook builds, or direct test-popup posts without one).
-        let rule = prompt.matchedPattern ?? "Bash(\(prompt.command))"
+        let rule = translatePromotion(prompt.matchedPattern ?? "Bash(\(prompt.command))")
         do {
             _ = try PersistentAllowList.addRule(rule)
         } catch {
@@ -349,6 +349,17 @@ final class MenuBarController: NSObject {
         // the same Claude Code session (Claude caches settings.json at start).
         sessionAllow.add(command: prompt.command)
         resolve(.allow)
+    }
+
+    /// Most patterns are written verbatim to Claude Code's `permissions.allow`
+    /// because Claude Code understands them natively (e.g. `Bash(git push:*)`,
+    /// `Edit(/etc/**)`). MCP is the exception: nudge uses an `Mcp(server__tool)`
+    /// wrapper for consistency, but Claude Code's permissions format wants the
+    /// bare `mcp__server__tool` form. Translate on promotion.
+    private func translatePromotion(_ rule: String) -> String {
+        guard rule.hasPrefix("Mcp("), rule.hasSuffix(")") else { return rule }
+        let inner = String(rule.dropFirst(4).dropLast())
+        return "mcp__\(inner)"
     }
 
     private func sessionAllowCurrent() {

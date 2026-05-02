@@ -171,6 +171,13 @@ struct PopoverView: View {
                 || p.hasPrefix("MultiEdit(") || p.hasPrefix("NotebookEdit(")) {
                 return true
             }
+            // Mcp() patterns are only promotable when they're exact (no `*`),
+            // because Claude Code's permissions.allow can't express MCP globs
+            // beyond `mcp__server` (whole server) or `mcp__server__tool` (one).
+            if let p = pattern, p.hasPrefix("Mcp("), p.hasSuffix(")") {
+                let inner = String(p.dropFirst(4).dropLast())
+                return !inner.contains("*")
+            }
             return false
         }
         let inner = String(p.dropFirst(5).dropLast())

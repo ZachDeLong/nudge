@@ -18,6 +18,13 @@
 #   Edit(/etc/**)             — anywhere under /etc
 #   Write(**/.env*)           — any .env-prefixed file
 #   Edit(/Users/**/.claude/**) — any user's Claude config tree
+#
+# MCP tools — match by tool name (the `mcp__` prefix is implied by `Mcp(...)`):
+#   Mcp(*)                              — every MCP tool
+#   Mcp(playwright__*)                  — every tool from the playwright server
+#   Mcp(computer-use__request_access)   — one specific tool
+# "Always allow" promotes exact `Mcp(server__tool)` patterns to
+# `mcp__server__tool` in permissions.allow. Globs aren't promotable.
 
 Bash(git push:*)
 Bash(rm:*)

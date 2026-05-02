@@ -42,9 +42,8 @@ case "$MODE" in
 esac
 
 # Import permission rules from permissions.ask for tool families the hook
-# binary knows how to match: Bash, Edit, Write, Read, MultiEdit, NotebookEdit.
-# Other rules (e.g. mcp__... or unknown tools) are skipped — they wouldn't
-# do anything in patterns.txt today.
+# binary knows how to match: Bash, Edit, Write, Read, MultiEdit, NotebookEdit,
+# and MCP tools (`mcp__server__tool` → wrapped as `Mcp(server__tool)`).
 if [[ ! -f "$SETTINGS" ]] || ! command -v jq >/dev/null 2>&1; then
     exit 0
 fi
@@ -57,8 +56,10 @@ ASK_BASH=$(jq -r '
           or startswith("Write(")
           or startswith("Read(")
           or startswith("MultiEdit(")
-          or startswith("NotebookEdit("))))
+          or startswith("NotebookEdit(")
+          or startswith("mcp__"))))
     | unique
+    | map(if startswith("mcp__") then "Mcp(" + .[5:] + ")" else . end)
     | .[]
 ' "$SETTINGS" 2>/dev/null || true)
 
@@ -87,5 +88,5 @@ fi
     printf "%s" "$NEW_LINES"
 } >> "$PATTERNS_FILE"
 
-COUNT=$(printf "%s" "$NEW_LINES" | grep -cE '^(Bash|Edit|Write|Read|MultiEdit|NotebookEdit)\(' || true)
+COUNT=$(printf "%s" "$NEW_LINES" | grep -cE '^(Bash|Edit|Write|Read|MultiEdit|NotebookEdit|Mcp)\(' || true)
 echo "→ Imported $COUNT pattern(s) from $SETTINGS (permissions.ask)"

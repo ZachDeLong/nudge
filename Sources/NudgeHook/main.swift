@@ -40,6 +40,8 @@ func matchTarget(for tool: String, input: [String: Any]) -> String {
         return (input["command"] as? String) ?? ""
     case .path:
         return (input["file_path"] as? String) ?? ""
+    case .mcp:
+        return mcpMatchTarget(for: tool) ?? ""
     case .unknown:
         return ""
     }
@@ -66,11 +68,20 @@ guard let matched = matchedPattern(toolName: toolName, target: target, patterns:
 }
 
 // `command` here is the display string for the popover: for Bash it's the
-// shell command, for Edit/Write/Read it's the file path.
+// shell command, for Edit/Write/Read it's the file path. For MCP tools we
+// show the full tool name (with the `mcp__` prefix) so the user knows what
+// they're approving — the bare `server__tool` form is for matching only.
+let displayCommand: String = {
+    switch family(for: toolName) {
+    case .mcp: return toolName
+    default: return target
+    }
+}()
+
 let prompt = Prompt(
     id: UUID().uuidString,
     tool: toolName,
-    command: target,
+    command: displayCommand,
     cwd: cwd,
     sessionId: sessionId,
     permissionMode: permissionMode,

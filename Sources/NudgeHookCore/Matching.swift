@@ -3,15 +3,30 @@ import Foundation
 public enum ToolFamily {
     case bash       // matches against tool_input.command
     case path       // matches against tool_input.file_path with glob
+    case mcp        // matches against tool name minus the `mcp__` prefix with glob
     case unknown
 }
+
+public let mcpToolPrefix = "mcp__"
 
 public func family(for tool: String) -> ToolFamily {
     switch tool {
     case "Bash": return .bash
     case "Edit", "Write", "Read", "MultiEdit", "NotebookEdit": return .path
-    default: return .unknown
+    default:
+        if tool.hasPrefix(mcpToolPrefix), tool.count > mcpToolPrefix.count {
+            return .mcp
+        }
+        return .unknown
     }
+}
+
+/// For `.mcp` tools, the match target is everything after `mcp__`. So
+/// `mcp__playwright__browser_evaluate` becomes `playwright__browser_evaluate`.
+/// Returns nil if the tool name isn't an MCP tool.
+public func mcpMatchTarget(for tool: String) -> String? {
+    guard tool.hasPrefix(mcpToolPrefix), tool.count > mcpToolPrefix.count else { return nil }
+    return String(tool.dropFirst(mcpToolPrefix.count))
 }
 
 /// Splits a pattern like `Edit(/etc/**)` into ("Edit", "/etc/**"). Rejects any
@@ -339,9 +354,10 @@ public func matchedPattern(toolName: String, target: String, patterns: [String])
     var firstInfix: String? = nil
     var firstPromotable: String? = nil
 
+    let toolFamily = family(for: toolName)
     let candidates: [String]
     let normalizedTarget: String
-    if family(for: toolName) == .bash {
+    if toolFamily == .bash {
         candidates = bashCandidates(for: target)
         normalizedTarget = normalizeForInfix(target)
     } else {
@@ -349,10 +365,14 @@ public func matchedPattern(toolName: String, target: String, patterns: [String])
         normalizedTarget = ""
     }
 
-    for pattern in patterns {
-        guard let (toolPart, inner) = parsePattern(pattern), toolPart == toolName else { continue }
+    // MCP patterns are wrapped as `Mcp(spec)`. Match against the inner spec
+    // (which is the tool name minus the `mcp__` prefix that lives in `target`).
+    let patternToolName = toolFamily == .mcp ? "Mcp" : toolName
 
-        switch family(for: toolName) {
+    for pattern in patterns {
+        guard let (toolPart, inner) = parsePattern(pattern), toolPart == patternToolName else { continue }
+
+        switch toolFamily {
         case .bash:
             if inner.hasPrefix("*") && inner.hasSuffix("*") {
                 let needle = normalizeForInfix(String(inner.dropFirst().dropLast()))
@@ -371,6 +391,10 @@ public func matchedPattern(toolName: String, target: String, patterns: [String])
                 }
             }
         case .path:
+            if globMatch(path: target, glob: inner), firstPromotable == nil {
+                firstPromotable = pattern
+            }
+        case .mcp:
             if globMatch(path: target, glob: inner), firstPromotable == nil {
                 firstPromotable = pattern
             }

@@ -46,7 +46,7 @@ PATTERN_COUNT=$(grep -v '^[[:space:]]*#' "$PATTERNS" | grep -v '^[[:space:]]*$' 
 # same PreToolUse stream plus PostToolUse/failure/UserPromptSubmit/
 # Notification/Stop events so the menu bar can show what the agent is doing
 # without screen scraping timing guesses.
-MATCHER='Bash|Edit|Write|Read|MultiEdit|NotebookEdit'
+MATCHER='Bash|Edit|Write|Read|MultiEdit|NotebookEdit|mcp__.*'
 
 jq \
   --arg cmd "$HOOK_CMD" \

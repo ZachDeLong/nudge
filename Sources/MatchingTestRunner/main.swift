@@ -312,6 +312,85 @@ expect(
     "match: write .env file"
 )
 
+// MARK: family — MCP tool detection
+
+expect(family(for: "mcp__playwright__browser_evaluate"), .mcp, "family: mcp__... → .mcp")
+expect(family(for: "mcp__computer-use__request_access"), .mcp, "family: mcp__... with hyphen server → .mcp")
+expect(family(for: "mcp__"), .unknown, "family: bare mcp__ prefix is not a real tool")
+expect(family(for: "Bash"), .bash, "family: Bash unchanged")
+expect(family(for: "Edit"), .path, "family: Edit unchanged")
+expect(family(for: "WebFetch"), .unknown, "family: non-matched tools stay unknown")
+
+// MARK: mcpMatchTarget — strips the `mcp__` prefix
+
+expect(
+    mcpMatchTarget(for: "mcp__playwright__browser_evaluate"),
+    "playwright__browser_evaluate",
+    "mcpMatchTarget: strips mcp__ prefix"
+)
+expectNil(mcpMatchTarget(for: "Bash"), "mcpMatchTarget: nil for non-MCP tool")
+expectNil(mcpMatchTarget(for: "mcp__"), "mcpMatchTarget: nil for empty MCP name")
+
+// MARK: matchedPattern — MCP
+
+let mcpPatterns = [
+    "Mcp(playwright__*)",
+    "Mcp(computer-use__request_access)",
+]
+
+expect(
+    matchedPattern(
+        toolName: "mcp__playwright__browser_evaluate",
+        target: "playwright__browser_evaluate",
+        patterns: mcpPatterns
+    ),
+    "Mcp(playwright__*)",
+    "match: MCP server-wide glob"
+)
+expect(
+    matchedPattern(
+        toolName: "mcp__computer-use__request_access",
+        target: "computer-use__request_access",
+        patterns: mcpPatterns
+    ),
+    "Mcp(computer-use__request_access)",
+    "match: MCP exact tool"
+)
+expectNil(
+    matchedPattern(
+        toolName: "mcp__supabase__authenticate",
+        target: "supabase__authenticate",
+        patterns: mcpPatterns
+    ),
+    "match: MCP non-matching server doesn't fire"
+)
+expect(
+    matchedPattern(
+        toolName: "mcp__anything__here",
+        target: "anything__here",
+        patterns: ["Mcp(*)"]
+    ),
+    "Mcp(*)",
+    "match: catch-all MCP glob"
+)
+// Bash patterns shouldn't accidentally match MCP tools, and vice versa.
+expectNil(
+    matchedPattern(
+        toolName: "mcp__playwright__browser_evaluate",
+        target: "playwright__browser_evaluate",
+        patterns: ["Bash(playwright:*)"]
+    ),
+    "match: Bash patterns ignore MCP tools"
+)
+expectNil(
+    matchedPattern(
+        toolName: "Bash",
+        target: "playwright run",
+        patterns: ["Mcp(playwright__*)"]
+    ),
+    "match: Mcp patterns ignore Bash tools"
+)
+
 // MARK: matchedPattern — quoted operator doesn't fool the splitter
 
 expect(
