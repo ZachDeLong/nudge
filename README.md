@@ -10,9 +10,9 @@ Experimental: `nudge-claude` can launch Claude Code inside a tmux session that N
 
 ## Why I built it
 
-I run Claude Code in auto mode and keep it on a side monitor. When something risky comes up, auto mode is supposed to stop and ask. But the prompt shows up in whichever terminal Claude is running in, and if I'm testing the app it just built, I don't see it for thirty seconds. Nudge surfaces those moments in the menu bar so I can answer without hunting.
+Half the time im developing I run Claude Code on just my Mac screen. When some permission comes up, auto mode is supposed to stop and ask. But the prompt shows up in whichever terminal Claude is running in, and if I'm testing the app it just built, I don't see it for thirty seconds. Nudge surfaces those moments in the menu bar so I can answer without hunting.
 
-It's opt-in, not a security blanket. You list patterns in `~/.config/nudge/patterns.txt`. Anything matching pops up; anything else goes through the normal Claude Code flow.
+It's a quality-of-life thing, not a security tool. When you're on one screen, you just don't want to keep tabbing back to the terminal to click Allow. You list patterns in `~/.config/nudge/patterns.txt`. Anything matching pops up; anything else goes through the normal Claude Code flow.
 
 ## Install
 

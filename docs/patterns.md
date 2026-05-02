@@ -70,6 +70,6 @@ On install, Nudge reads your `permissions.ask` array from `~/.claude/settings.js
 
 Run `make import-permissions` later to merge in new ones without overwriting your existing `patterns.txt`.
 
-## Threat model
+## What the matcher won't catch
 
-Nudge's normalization catches incidental command-shape variation (case, quotes, backslash escapes, command substitution). It does **not** catch determined adversarial inputs — env-var split-and-reassemble (`F=--force git push $F`), `printf '\xNN'` hex escapes, `eval`, `base64 -d` — those would need real bash interpretation. The threat model is agent-accident, not adversarial bypass: the agent already has shell access, so the safety prompt only needs to be honest against the shapes Claude Code actually emits.
+Normalization handles incidental shape variation: case differences, quote characters, backslash escapes, command substitution bodies. It doesn't try to interpret bash, so things like env-var split-and-reassemble (`F=--force git push $F`), `printf '\xNN'` hex escapes, `eval`, and `base64 -d` slip through. Nudge isn't a sandbox; it's a popover. The matcher just needs to recognize the command shapes Claude Code actually emits.
