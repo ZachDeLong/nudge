@@ -8,7 +8,7 @@ final class PromptQueueTests: XCTestCase {
 
         let task = Task { try await queue.enqueue(prompt) }
         try await Task.sleep(nanoseconds: 20_000_000)
-        await queue.resolveHead(with: .allow)
+        await queue.resolve(id: "1", with: .allow)
         let result = try await task.value
         XCTAssertEqual(result.decision, .allow)
     }
@@ -23,11 +23,11 @@ final class PromptQueueTests: XCTestCase {
         let t2 = Task { try await queue.enqueue(p2) }
         try await Task.sleep(nanoseconds: 20_000_000)
 
-        await queue.resolveHead(with: .allow)
+        await queue.resolve(id: "1", with: .allow)
         let r1 = try await t1.value
         XCTAssertEqual(r1.decision, .allow)
 
-        await queue.resolveHead(with: .deny)
+        await queue.resolve(id: "2", with: .deny)
         let r2 = try await t2.value
         XCTAssertEqual(r2.decision, .deny)
     }
@@ -41,5 +41,22 @@ final class PromptQueueTests: XCTestCase {
         } catch PromptQueue.QueueError.timedOut {
             // expected
         }
+    }
+
+    func testCancellingCallerWithdrawsPrompt() async throws {
+        let queue = PromptQueue()
+        let prompt = Prompt(id: "gone", tool: "Bash", command: "x", cwd: "/", sessionId: "s")
+
+        let task = Task { try await queue.enqueue(prompt) }
+        try await Task.sleep(nanoseconds: 20_000_000)
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("expected withdrawal")
+        } catch PromptQueue.QueueError.withdrawn {
+            // expected
+        }
+        let resolved = await queue.resolve(id: "gone", with: .allow)
+        XCTAssertFalse(resolved)
     }
 }

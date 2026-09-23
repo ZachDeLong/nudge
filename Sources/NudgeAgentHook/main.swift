@@ -48,6 +48,11 @@ exit(0)
 
 private func string(_ value: Any?) -> String? {
     switch value {
+    case is NSNull:
+        // A JSON `null`. NSNull is CustomStringConvertible, so without this
+        // case it came back as the string "<null>" and beat every `??`
+        // fallback (a null cwd grouped unrelated sessions under "<null>").
+        return nil
     case let value as String:
         return value
     case let value as CustomStringConvertible:

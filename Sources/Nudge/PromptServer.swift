@@ -163,14 +163,42 @@ actor PromptServer {
             await sendAndAwait(Data(resp), on: conn)
             return
         }
+        let waiter = Task { [queue, timeoutSeconds] in
+            try await queue.enqueueWithTimeout(prompt, seconds: timeoutSeconds)
+        }
+        Self.watchForHangup(conn) { waiter.cancel() }
         do {
-            let response = try await queue.enqueueWithTimeout(prompt, seconds: timeoutSeconds)
+            let response = try await waiter.value
             let body = try JSONEncoder().encode(response)
             let resp = HTTPCodec.writeResponse(status: 200, contentType: "application/json", body: Array(body))
             await sendAndAwait(Data(resp), on: conn)
+        } catch PromptQueue.QueueError.withdrawn {
+            return // The caller hung up; there is no one to answer.
+        } catch is CancellationError {
+            return
         } catch {
             let resp = HTTPCodec.writeResponse(status: 408, contentType: "text/plain", body: Array("timeout".utf8))
             await sendAndAwait(Data(resp), on: conn)
+        }
+    }
+
+    /// Calls `onHangup` when the peer closes the connection. A hook sends one
+    /// request and then only reads, so any read completing here means it went
+    /// away: Claude Code killed it because the user pressed Esc in the
+    /// terminal, or the session ended. Without this its prompt stayed on
+    /// screen until the timeout, and answering it reached no one.
+    ///
+    /// Also fires, harmlessly, when we cancel the connection after answering.
+    private nonisolated static func watchForHangup(
+        _ conn: NWConnection,
+        onHangup: @escaping @Sendable () -> Void
+    ) {
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 1) { data, _, isComplete, error in
+            if isComplete || error != nil {
+                onHangup()
+            } else if data != nil {
+                watchForHangup(conn, onHangup: onHangup)
+            }
         }
     }
 

@@ -13,6 +13,7 @@ struct PopoverView: View {
     let onTogglePause: () -> Void
     let onToggleSkipTerminal: () -> Void
     let onQuit: () -> Void
+    let onEnableGlobalKeys: () -> Void
     @ObservedObject var agentChat: AgentChatStore
     let onRefreshAgentSessions: () -> Void
     let onSelectAgentSession: (String) -> Void
@@ -96,15 +97,18 @@ struct PopoverView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
           } else {
           HStack(spacing: 8) {
+            // Permission panels never take key, so the keycaps are only
+            // true when the global monitor can hear them.
+            let keys = state.globalKeysAvailable
             Button(action: onDeny) {
-                ButtonLabel(title: "Deny", key: "esc")
+                ButtonLabel(title: "Deny", key: keys ? "esc" : nil)
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
             .keyboardShortcut(.cancelAction)
 
             Button(action: onAllow) {
-                ButtonLabel(title: "Allow", key: "⏎", weight: .semibold, prominent: true)
+                ButtonLabel(title: "Allow", key: keys ? "⏎" : nil, weight: .semibold, prominent: true)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -226,6 +230,26 @@ struct PopoverView: View {
                     set: { _ in onToggleSkipTerminal() }
                 )
             )
+
+            if !state.globalKeysAvailable {
+                HStack(spacing: 10) {
+                    Image(systemName: "keyboard")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Answer with ⏎ and esc from any app")
+                            .font(.system(size: 12))
+                        Text("Needs Accessibility access")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Button("Enable…", action: onEnableGlobalKeys)
+                        .controlSize(.small)
+                }
+                .transition(.opacity)
+            }
 
             Divider()
 
@@ -717,7 +741,7 @@ private struct NoticeRow: View {
 /// front), so making them visible matters more than it would in a dialog.
 private struct ButtonLabel: View {
     let title: String
-    let key: String
+    let key: String?
     var weight: Font.Weight = .medium
     var prominent: Bool = false
 
@@ -725,7 +749,9 @@ private struct ButtonLabel: View {
         HStack(spacing: 6) {
             Text(title)
                 .font(.system(size: 13, weight: weight))
-            KeyCap(key, prominent: prominent)
+            if let key {
+                KeyCap(key, prominent: prominent)
+            }
         }
         .frame(maxWidth: .infinity)
     }

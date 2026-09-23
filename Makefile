@@ -1,4 +1,4 @@
-.PHONY: build clean run install uninstall sync-patterns import-permissions test test-popup previews
+.PHONY: build clean run app install uninstall sync-patterns import-permissions test test-popup previews icon
 
 CONFIG ?= release
 BUILD_DIR := .build/$(CONFIG)
@@ -15,18 +15,14 @@ clean:
 run: build
 	$(BUILD_DIR)/Nudge
 
+# Builds an .app bundle in $(BUILD_DIR)/Nudge.app without installing it.
+app: build
+	./scripts/build-app.sh $(BUILD_DIR)
+
 # Builds an .app bundle in $(BUILD_DIR)/Nudge.app and installs it to /Applications.
 install: build
 	@echo "→ Building app bundle…"
-	rm -rf $(BUILD_DIR)/Nudge.app
-	mkdir -p $(BUILD_DIR)/Nudge.app/Contents/MacOS
-	cp $(BUILD_DIR)/Nudge $(BUILD_DIR)/Nudge.app/Contents/MacOS/Nudge
-	cp $(BUILD_DIR)/nudge-hook $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-hook
-	cp $(BUILD_DIR)/nudge-agent-hook $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-agent-hook
-	cp $(BUILD_DIR)/nudge-ask $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-ask
-	cp $(BUILD_DIR)/nudge-claude $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-claude
-	cp $(BUILD_DIR)/nudge-update $(BUILD_DIR)/Nudge.app/Contents/MacOS/nudge-update
-	cp Resources-Info.plist $(BUILD_DIR)/Nudge.app/Contents/Info.plist
+	./scripts/build-app.sh $(BUILD_DIR)
 	@echo "→ Copying to /Applications…"
 	-pkill -x Nudge 2>/dev/null || true
 	rm -rf $(APP_DEST)
@@ -80,6 +76,10 @@ test-popup:
 previews: build
 	$(BUILD_DIR)/Nudge --render-previews $(BUILD_DIR)/previews
 	@echo "✓ Previews in $(BUILD_DIR)/previews/"
+
+# Regenerates assets/AppIcon.icns from scripts/render-icon.swift.
+icon:
+	swift scripts/render-icon.swift
 
 uninstall:
 	-pkill -x Nudge 2>/dev/null || true

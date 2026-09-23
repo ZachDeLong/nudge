@@ -175,17 +175,22 @@ enum PreviewRenderer {
             promptPreview: nil, message: nil, error: nil
         ))]
 
-        func make(_ prompt: Prompt?, depth: Int, prefs: Prefs, store: AgentChatStore, notice: DecisionNotice? = nil) -> PopoverView {
+        func make(
+            _ prompt: Prompt?, depth: Int, prefs: Prefs, store: AgentChatStore,
+            notice: DecisionNotice? = nil, globalKeys: Bool = true
+        ) -> PopoverView {
             let state = PromptStore()
             state.prompt = prompt
             state.queueDepth = depth
             state.prefs = prefs
             state.notice = notice
+            state.globalKeysAvailable = globalKeys
             return PopoverView(
                 state: state,
                 onAllow: {}, onDeny: {}, onAlwaysAllow: {}, onSessionAllow: {},
                 onSubmitText: { _ in }, onCancelAsk: {},
                 onTogglePause: {}, onToggleSkipTerminal: {}, onQuit: {},
+                onEnableGlobalKeys: {},
                 agentChat: store,
                 onRefreshAgentSessions: {}, onSelectAgentSession: { _ in },
                 onSendAgentMessage: { _, _ in }, onEndAgentSession: { _ in },
@@ -199,8 +204,11 @@ enum PreviewRenderer {
             ("permission-edit",    make(edit,       depth: 1, prefs: watching, store: emptyChat)),
             ("permission-infix",   make(forceInfix, depth: 1, prefs: watching, store: emptyChat)),
             ("permission-allowed", make(push,       depth: 1, prefs: watching, store: emptyChat, notice: .allowed)),
+            ("permission-withdrawn", make(rm,       depth: 1, prefs: watching, store: emptyChat, notice: .withdrawn)),
+            ("permission-no-keys", make(push,       depth: 1, prefs: watching, store: emptyChat, globalKeys: false)),
             ("ask",                make(ask,        depth: 1, prefs: watching, store: emptyChat)),
             ("idle-watching",      make(nil,        depth: 0, prefs: watching, store: emptyChat)),
+            ("idle-no-keys",       make(nil,        depth: 0, prefs: watching, store: emptyChat, globalKeys: false)),
             ("idle-paused",        make(nil,        depth: 0, prefs: paused,   store: emptyChat)),
             ("idle-chat",          make(nil,        depth: 0, prefs: watching, store: chat)),
         ]

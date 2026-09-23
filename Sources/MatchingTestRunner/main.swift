@@ -761,6 +761,119 @@ do {
     expect(gotB.decision, Decision.deny, "queue: successor got deny, not the leaked allow")
 }
 
+// MARK: PromptQueue — depth updates and withdrawn callers (regression)
+//
+// The queue only announced head changes, so the "N more" pill and menu bar
+// count never moved when prompts piled up behind the head. And a prompt whose
+// hook was killed (user pressed Esc in Claude Code) stayed queued until the
+// five-minute timeout, blocking everything behind it.
+
+final class HeadRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [(String?, Int)] = []
+
+    func record(_ prompt: Prompt?, _ depth: Int) {
+        lock.lock(); defer { lock.unlock() }
+        events.append((prompt?.id, depth))
+    }
+
+    var last: (id: String?, depth: Int)? {
+        lock.lock(); defer { lock.unlock() }
+        return events.last.map { (id: $0.0, depth: $0.1) }
+    }
+}
+
+func withdrawnError(_ error: Error) -> Bool {
+    (error as? PromptQueue.QueueError) == .withdrawn
+}
+
+do {
+    let queue = PromptQueue()
+    let heads = HeadRecorder()
+    await queue.setOnHeadChange { heads.record($0, $1) }
+
+    let callerA = Task { try await queue.enqueue(makePrompt("A", command: "rm a")) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    let callerB = Task { try await queue.enqueue(makePrompt("B", command: "rm b")) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    expect(heads.last?.id, "A", "queue depth: head unchanged when a prompt joins behind it")
+    expect(heads.last?.depth, 2, "queue depth: joining prompt is announced")
+
+    let withdrewB = await queue.withdraw(id: "B")
+    expect(withdrewB, true, "queue withdraw: a queued prompt can be withdrawn")
+    expect(heads.last?.depth, 1, "queue depth: leaving prompt behind the head is announced")
+    do {
+        _ = try await callerB.value
+        failures.append("✗ queue withdraw: withdrawn caller should throw")
+    } catch {
+        expect(withdrawnError(error), true, "queue withdraw: withdrawn caller gets .withdrawn")
+    }
+
+    // The server's path: the hook hangs up, so the task waiting on the
+    // decision is cancelled, and the head it owned has to go with it.
+    let callerC = Task { try await queue.enqueue(makePrompt("C", command: "rm c")) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    expect(heads.last?.depth, 2, "queue cancel: C queued behind A")
+    callerA.cancel()
+    try await Task.sleep(nanoseconds: 100_000_000)
+    expect(heads.last?.id, "C", "queue cancel: cancelling the head's caller withdraws it")
+    expect(heads.last?.depth, 1, "queue cancel: depth drops with the withdrawn head")
+    do {
+        _ = try await callerA.value
+        failures.append("✗ queue cancel: cancelled caller should throw")
+    } catch {
+        expect(withdrawnError(error), true, "queue cancel: cancelled caller gets .withdrawn")
+    }
+
+    let resolvedC = await queue.resolve(id: "C", with: .allow)
+    expect(resolvedC, true, "queue cancel: the survivor still resolves normally")
+    expect(try await callerC.value.decision, Decision.allow, "queue cancel: survivor gets its decision")
+    expect(heads.last?.id, nil, "queue cancel: queue drains to empty")
+}
+
+do {
+    // Cancelled before the prompt ever reached the queue: it must never be
+    // shown, whichever side of the actor hop the cancel lands on.
+    let queue = PromptQueue()
+    let heads = HeadRecorder()
+    await queue.setOnHeadChange { heads.record($0, $1) }
+
+    for i in 0..<20 {
+        let caller = Task { try await queue.enqueue(makePrompt("early-\(i)", command: "rm x")) }
+        caller.cancel()
+        _ = try? await caller.value
+    }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    expect(heads.last?.id, nil, "queue cancel: prompts cancelled on arrival never stay queued")
+    expect(heads.last?.depth ?? 0, 0, "queue cancel: no ghost depth left behind")
+}
+
+do {
+    // The server's exact path: the waiting task runs enqueueWithTimeout, and
+    // cancellation has to reach the enqueue inside its task group.
+    let queue = PromptQueue()
+    let heads = HeadRecorder()
+    await queue.setOnHeadChange { heads.record($0, $1) }
+    let waiter = Task { try await queue.enqueueWithTimeout(makePrompt("W", command: "rm w"), seconds: 30) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    expect(heads.last?.id, "W", "queue hangup: prompt is on screen while its caller waits")
+    waiter.cancel()
+    _ = try? await waiter.value
+    try await Task.sleep(nanoseconds: 100_000_000)
+    expect(heads.last?.id, nil, "queue hangup: cancelling the waiter clears it well before the timeout")
+}
+
+do {
+    // A timeout still reads as a timeout, not a withdrawal.
+    let queue = PromptQueue()
+    do {
+        _ = try await queue.enqueueWithTimeout(makePrompt("T", command: "rm t"), seconds: 0.1)
+        failures.append("✗ queue timeout: expected a throw")
+    } catch {
+        expect((error as? PromptQueue.QueueError), .timedOut, "queue timeout: expiry surfaces as .timedOut")
+    }
+}
+
 // MARK: AgentActivityStore — pruning uses our clock, not the wire's
 
 func activityEvent(_ name: String, session: String, at date: Date) -> AgentHookEvent {
@@ -794,6 +907,67 @@ do {
 
     let snaps = await store.snapshots(now: now)
     expect(snaps.count, 2, "activity: a future-dated event doesn't evict the ended snapshot")
+}
+
+// MARK: TmuxAgentBackend — large captures don't deadlock (regression)
+//
+// run() waited for tmux to exit before reading its stdout, so a capture larger
+// than the ~64KB pipe buffer hung forever: tmux blocked writing, Nudge blocked
+// waiting. A fake tmux (via NUDGE_TMUX_PATH) prints 300KB for capture-pane;
+// it also exits without reading stdin on load-buffer, which used to risk a
+// SIGPIPE crash on send().
+
+func withinDeadline<T>(_ seconds: TimeInterval, _ body: @escaping () -> T) -> T? {
+    let done = DispatchSemaphore(value: 0)
+    let box = ResultBox<T>()
+    Thread.detachNewThread {
+        box.value = body()
+        done.signal()
+    }
+    return done.wait(timeout: .now() + seconds) == .success ? box.value : nil
+}
+
+final class ResultBox<T>: @unchecked Sendable {
+    var value: T?
+}
+
+do {
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("nudge-fake-tmux-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let fake = dir.appendingPathComponent("tmux")
+    try """
+    #!/bin/sh
+    case "$1" in
+      capture-pane) head -c 300000 /dev/zero | tr '\\0' 'x'; echo; echo "tail-marker" ;;
+      display-message) echo 0 ;;
+      load-buffer) exit 0 ;;
+      *) exit 0 ;;
+    esac
+    """.write(to: fake, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
+    setenv("NUDGE_TMUX_PATH", fake.path, 1)
+    defer { unsetenv("NUDGE_TMUX_PATH") }
+
+    let session = AgentSessionSummary(
+        id: "fake", kind: .claude, title: "fake", cwd: "/tmp",
+        tmuxSession: "nudge-fake", createdAt: Date(), isAttached: false
+    )
+    let backend = TmuxAgentBackend()
+
+    let transcript = withinDeadline(10) { (try? backend.detail(for: session))?.transcript }
+    if let transcript {
+        expect(transcript?.hasSuffix("tail-marker"), true, "tmux: 300KB capture arrives whole")
+    } else {
+        failures.append("✗ tmux: capture of 300KB deadlocked (no result in 10s)")
+    }
+
+    let big = String(repeating: "y", count: 1_000_000)
+    let sent = withinDeadline(10) { () -> Bool in
+        (try? backend.send(big, to: session)) != nil
+    }
+    expect(sent != nil, true, "tmux: send survives tmux exiting without reading stdin")
 }
 
 // MARK: Checksum — the updater's integrity gate

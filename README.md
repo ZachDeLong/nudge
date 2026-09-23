@@ -104,6 +104,7 @@ Click the menu bar icon when there's no prompt up. The idle popover doubles as a
 
 - **Pause Nudge / Resume Nudge.** Master switch. Paused = both hooks exit silently and Claude falls back to its native terminal prompt. That covers the agent hook too, so a paused Nudge stops collecting activity as well as popping panels. The status pill and icon both reflect the current state.
 - **Skip when terminal is focused** (on by default). When the frontmost app is a known terminal or IDE (Ghostty, iTerm2, Terminal.app, Warp, wezterm, Hyper, VS Code, Cursor), the hook skips the popover. You're already there; Claude's native prompt is fine.
+- **Answer with ⏎ and esc from any app.** While a prompt is up, Enter allows and Esc denies, even if you're in another app. macOS won't pass those keys to Nudge until you turn it on in System Settings → Privacy & Security → Accessibility. Until you do, the settings panel shows an Enable… button and the popover leaves off the key hints. Nudge ignores the keys for the first 0.6 seconds a prompt is on screen, and it ignores them if you're holding a modifier or the key is repeating. So pressing Enter in a browser form just as a prompt pops up won't approve it. One annoyance: the build is unsigned, so macOS forgets the grant every time you rebuild or update. Remove Nudge from the list and turn it back on.
 - **Quit Nudge.** Exits the menu bar app entirely and stays exited — the hooks won't relaunch it behind your back. Start it again from Spotlight or `/Applications` and auto-launch resumes. (A crash is different: that still auto-recovers on the next hook call.)
 
 Right-clicking the icon opens the same toggles as a context menu, in case that's the gesture you reach for.
@@ -182,7 +183,7 @@ Session metadata at `~/.config/nudge/sessions/*.json` is owner-only (`0o600`) an
 - **Unsigned build.** The Makefile runs `xattr -d com.apple.quarantine` so it launches without Gatekeeper complaining, but the build isn't code-signed or notarized. If you download the prebuilt zip, you'll need to run that `xattr` command yourself once.
 - **One Mac at a time.** Patterns aren't synced across machines.
 - **Hooks fire before Claude classifies.** That's why patterns are explicit opt-in rather than "everything auto mode would prompt about." `PreToolUse` runs before Claude decides whether a call would trigger a prompt, and the `PermissionRequest` event (which fires at the right time) is observe-only.
-- **Queue is FIFO with a 5-minute timeout.** Pile up enough prompts and the older ones expire.
+- **Queue is FIFO with a 5-minute timeout.** Pile up enough prompts and the older ones expire. If Claude stops waiting on a prompt (say you hit Esc in the terminal), it drops out of the queue right away. The panel tells you and moves on to the next one.
 - **Agent session mirroring requires `nudge-claude`.** Nudge can cleanly mirror sessions it launched through tmux; it does not attach to arbitrary existing terminal tabs.
 
 ## Uninstall

@@ -249,14 +249,34 @@ public struct TmuxAgentBackend: Sendable {
         } catch {
             throw TmuxAgentError.tmuxUnavailable
         }
+
+        // Feed stdin and drain stderr on the side while stdout is read here.
+        // Reading only after waitUntilExit deadlocks once output outgrows the
+        // ~64KB pipe buffer: tmux blocks on write, we block waiting for it to
+        // exit. A capture of a wide pane full of box-drawing characters (three
+        // bytes each) gets there.
+        let pumps = DispatchGroup()
         if let input, let stdin {
-            stdin.fileHandleForWriting.write(input)
-            try? stdin.fileHandleForWriting.close()
+            DispatchQueue.global().async(group: pumps) {
+                let handle = stdin.fileHandleForWriting
+                // If tmux exits without reading, the write fails with EPIPE
+                // instead of a SIGPIPE killing the whole app, and the exit
+                // status below reports it.
+                _ = fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1)
+                try? handle.write(contentsOf: input)
+                try? handle.close()
+            }
         }
+        let errBox = DataBox()
+        DispatchQueue.global().async(group: pumps) {
+            errBox.data = stderr.fileHandleForReading.readDataToEndOfFile()
+        }
+        let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+        pumps.wait()
         process.waitUntilExit()
 
-        let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let out = String(data: outData, encoding: .utf8) ?? ""
+        let err = String(data: errBox.data, encoding: .utf8) ?? ""
         guard process.terminationStatus == 0 else {
             throw TmuxAgentError.commandFailed(
                 command: "\(command) \(args.joined(separator: " "))",
@@ -322,4 +342,10 @@ public struct TmuxAgentBackend: Sendable {
         }
         return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
+}
+
+/// Carries a pipe's contents out of the reader block. `pumps.wait()` orders
+/// the write before the read, so no lock is needed.
+private final class DataBox: @unchecked Sendable {
+    var data = Data()
 }

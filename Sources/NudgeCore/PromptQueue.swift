@@ -11,16 +11,33 @@ public actor PromptQueue {
 
     public enum QueueError: Error, Equatable {
         case timedOut
+        /// The caller stopped waiting (see `withdraw(id:)`).
+        case withdrawn
     }
 
     public init() {}
 
+    /// Waits for the user's decision on `prompt`. Cancelling the calling task
+    /// withdraws the prompt, which is how the server drops a prompt whose
+    /// caller hung up.
     public func enqueue(_ prompt: Prompt) async throws -> DecisionResponse {
-        try await withCheckedThrowingContinuation { cont in
-            let item = Pending(prompt: prompt, continuation: cont)
-            let wasEmpty = pending.isEmpty
-            pending.append(item)
-            if wasEmpty { notifyHead() }
+        let id = prompt.id
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { cont in
+                // Cancelled before it was ever queued: don't put it on screen.
+                // Checked on the actor, so a cancel landing after this point
+                // finds the prompt queued and withdraws it below.
+                guard !Task.isCancelled else {
+                    cont.resume(throwing: QueueError.withdrawn)
+                    return
+                }
+                pending.append(Pending(prompt: prompt, continuation: cont))
+                // Notify even when the head is unchanged: the depth moved, and
+                // the UI shows it (menu bar count, "N more" pill).
+                notifyHead()
+            }
+        } onCancel: {
+            Task { await self.withdraw(id: id) }
         }
     }
 
@@ -68,12 +85,24 @@ public actor PromptQueue {
         notifyHead()
     }
 
-    private func removePrompt(id: String) {
-        if let idx = pending.firstIndex(where: { $0.prompt.id == id }) {
-            let removed = pending.remove(at: idx)
-            removed.continuation.resume(throwing: QueueError.timedOut)
-            if idx == 0 { notifyHead() }
-        }
+    /// Drops a prompt whose caller is no longer waiting — the hook was killed
+    /// because the user interrupted Claude or answered in the terminal. Left
+    /// in place it would sit on screen for the full timeout, answering it
+    /// would reach nobody, and every prompt queued behind it would wait too.
+    ///
+    /// Returns true if the prompt was still pending.
+    @discardableResult
+    public func withdraw(id: String) -> Bool {
+        removePrompt(id: id, error: .withdrawn)
+    }
+
+    @discardableResult
+    private func removePrompt(id: String, error: QueueError = .timedOut) -> Bool {
+        guard let idx = pending.firstIndex(where: { $0.prompt.id == id }) else { return false }
+        let removed = pending.remove(at: idx)
+        removed.continuation.resume(throwing: error)
+        notifyHead()
+        return true
     }
 
     private func notifyHead() {

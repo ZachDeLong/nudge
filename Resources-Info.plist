@@ -10,6 +10,8 @@
     <string>Nudge</string>
     <key>CFBundleExecutable</key>
     <string>Nudge</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
     <string>1.2.1</string>
     <key>CFBundleVersion</key>

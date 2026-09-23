@@ -29,6 +29,8 @@ final class MenuBarController: NSObject {
     private var agentRefreshTimer: Timer?
     private var agentRefreshSequence: Int = 0
     private var keyMonitor: Any?
+    /// Global ⏎/esc are ignored until this moment. See `armKeys()`.
+    private var keysArmedAt: Date = .distantFuture
     private var clickMonitor: Any?
     private var idleKeyMonitor: Any?
     private var settings: Prefs = .load()
@@ -262,6 +264,7 @@ final class MenuBarController: NSObject {
             onTogglePause: { [weak self] in self?.togglePauseAndRefresh() },
             onToggleSkipTerminal: { [weak self] in self?.toggleSkipTerminalAndRefresh() },
             onQuit: { [weak self] in self?.quitApp() },
+            onEnableGlobalKeys: { [weak self] in self?.enableGlobalKeys() },
             agentChat: agentChat,
             onRefreshAgentSessions: { [weak self] in self?.refreshAgentSessions() },
             onSelectAgentSession: { [weak self] id in self?.refreshAgentSessions(selecting: id) },
@@ -307,6 +310,8 @@ final class MenuBarController: NSObject {
             anchorTo: statusItem.button,
             makeKey: isAsk || isIdle
         )
+        armKeys()
+        store.globalKeysAvailable = GlobalKeys.isAvailable
         // Menu bar extras show their icon pressed while their panel is open.
         statusItem.button?.highlight(true)
         // Click-outside dismiss applies to every visible state of the panel.
@@ -350,6 +355,8 @@ final class MenuBarController: NSObject {
         agentRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshAgentSessions(selecting: self?.agentChat.detail?.id)
+                // Picks up an Accessibility grant made while the panel is open.
+                self?.refreshGlobalKeysAvailability()
             }
         }
     }
@@ -382,12 +389,35 @@ final class MenuBarController: NSObject {
             deferredHead = (prompt, depth)
             return
         }
+
+        // The head only moves when it leaves the queue, and our own decisions
+        // put up a notice first (handled above). So a visible prompt replaced
+        // here left without a click: its hook was killed or it timed out.
+        // Say so instead of letting it vanish mid-read.
+        if panel.isVisible, let shown = store.prompt, shown.id != prompt?.id {
+            deferredHead = (prompt, depth)
+            showNotice(.withdrawn)
+            return
+        }
         applyHead(prompt: prompt, depth: depth)
     }
 
     private func applyHead(prompt: Prompt?, depth: Int) {
         let wasVisible = panel.isVisible
         let previousID = store.prompt?.id
+
+        // Same head, different depth: a prompt joined or left the line behind
+        // it. Update the counts and nudge the icon on growth, but don't
+        // re-show a panel the user dismissed.
+        if let prompt, prompt.id == previousID {
+            let grew = depth > store.queueDepth
+            withAnimation((wasVisible && !reduceMotion) ? .easeInOut(duration: 0.2) : nil) {
+                store.queueDepth = depth
+            }
+            refreshIcon(arrived: grew)
+            return
+        }
+
         // Visible panel: cross-fade to the new content in place. Hidden: no
         // animation on the state — the drop-in in show() is the entrance.
         withAnimation((wasVisible && !reduceMotion) ? .easeInOut(duration: 0.22) : nil) {
@@ -423,6 +453,7 @@ final class MenuBarController: NSObject {
         let isAsk = currentPrompt?.resolvedKind == .ask
         let isIdle = currentPrompt == nil
         panel.setKeyable(isAsk || isIdle)
+        armKeys()
         animatedRefit()
         if currentPrompt?.resolvedKind == .permission { startPulse() } else { stopPulse() }
         if isIdle {
@@ -485,7 +516,7 @@ final class MenuBarController: NSObject {
         }
         noticeTask?.cancel()
         noticeTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 520_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(notice.holdDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
             self?.endNotice()
         }
@@ -548,16 +579,51 @@ final class MenuBarController: NSObject {
 
     // MARK: - Global keyboard
 
+    /// How long a prompt must be on screen before global ⏎/esc count. The
+    /// monitor sees keys typed into *any* app, so without this, pressing Enter
+    /// in a browser form just as a prompt lands would approve a command no one
+    /// has read. Same idea as the delay on browser install dialogs.
+    private static let keyArmingDelay: TimeInterval = 0.6
+
+    /// Restarts the arming delay. Called whenever a prompt appears or the
+    /// panel's prompt changes.
+    private func armKeys() {
+        keysArmedAt = Date().addingTimeInterval(Self.keyArmingDelay)
+    }
+
     private func startKeyMonitor() {
         stopKeyMonitor()
         keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard self?.panel.isVisible == true else { return }
+            guard let self, self.panel.isVisible,
+                  Self.isBareKeyPress(event),
+                  Date() >= self.keysArmedAt else { return }
             if event.keyCode == 36 || event.keyCode == 76 {
-                DispatchQueue.main.async { self?.resolve(.allow) }
+                DispatchQueue.main.async { self.resolve(.allow) }
             } else if event.keyCode == 53 {
-                DispatchQueue.main.async { self?.resolve(.deny) }
+                DispatchQueue.main.async { self.resolve(.deny) }
             }
         }
+    }
+
+    /// A deliberate press: not auto-repeat from a held key, and no modifiers.
+    /// ⇧⏎ and ⌘⏎ mean "newline" or "send" in chat apps, so they never answer
+    /// a prompt behind your back.
+    private nonisolated static func isBareKeyPress(_ event: NSEvent) -> Bool {
+        !event.isARepeat
+            && event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+    }
+
+    private func refreshGlobalKeysAvailability() {
+        let available = GlobalKeys.isAvailable
+        guard available != store.globalKeysAvailable else { return }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+            store.globalKeysAvailable = available
+        }
+        if panel.isVisible { animatedRefit() }
+    }
+
+    private func enableGlobalKeys() {
+        GlobalKeys.requestAccess()
     }
 
     private func stopKeyMonitor() {
@@ -809,7 +875,6 @@ final class PromptPanel {
         panel.setContentSize(size)
 
         let finalOrigin = computeOrigin(anchorTo: button)
-        logPositioning(button: button, finalOrigin: finalOrigin)
 
         // Drop-in: start 12px above the resting position and 0 alpha, then
         // snap into place with a back-out (light overshoot). Kept short so the
@@ -928,48 +993,5 @@ final class PromptPanel {
         let margin: CGFloat = 14
         return NSPoint(x: visible.maxX - size.width - margin,
                        y: visible.maxY - size.height - margin)
-    }
-
-    // MARK: - Diagnostic logging
-
-    /// Writes a one-line summary of every show() call to /tmp/nudge-position.log.
-    /// Helps debug why the panel ends up in different places.
-    private func logPositioning(button: NSStatusBarButton?, finalOrigin: NSPoint) {
-        let url = URL(fileURLWithPath: "/tmp/nudge-position.log")
-        let ts = ISO8601DateFormatter().string(from: Date())
-        var lines: [String] = ["=== \(ts) ==="]
-        if let button = button {
-            if let win = button.window {
-                let f = win.frame
-                lines.append("  button.window.frame = (x=\(f.origin.x), y=\(f.origin.y), w=\(f.width), h=\(f.height))")
-                if let screen = win.screen {
-                    lines.append("  button.window.screen.frame = (x=\(screen.frame.origin.x), y=\(screen.frame.origin.y), w=\(screen.frame.width), h=\(screen.frame.height))")
-                    lines.append("  button.window.screen.visibleFrame.maxY = \(screen.visibleFrame.maxY)")
-                } else {
-                    lines.append("  button.window.screen = nil")
-                }
-            } else {
-                lines.append("  button.window = nil  ← anchoring will fall back")
-            }
-        } else {
-            lines.append("  button = nil")
-        }
-        if let main = NSScreen.main {
-            lines.append("  NSScreen.main.frame = (x=\(main.frame.origin.x), y=\(main.frame.origin.y), w=\(main.frame.width), h=\(main.frame.height))")
-        }
-        lines.append("  panel.size = (w=\(panel.frame.width), h=\(panel.frame.height))")
-        lines.append("  finalOrigin = (x=\(finalOrigin.x), y=\(finalOrigin.y))")
-        let blob = lines.joined(separator: "\n") + "\n"
-        if let data = blob.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: url.path) {
-                if let handle = try? FileHandle(forWritingTo: url) {
-                    handle.seekToEndOfFile()
-                    handle.write(data)
-                    try? handle.close()
-                }
-            } else {
-                try? data.write(to: url)
-            }
-        }
     }
 }
