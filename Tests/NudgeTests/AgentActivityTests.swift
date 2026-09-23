@@ -114,7 +114,9 @@ final class AgentActivityTests: XCTestCase {
         let store = AgentActivityStore(endedSnapshotTTL: 10)
         let startedAt = Date(timeIntervalSince1970: 100)
 
-        await store.record(event("SessionEnd", occurredAt: startedAt))
+        // Pruning runs on the store's clock, not the event's wire timestamp,
+        // so record "now" has to be pinned alongside it.
+        await store.record(event("SessionEnd", occurredAt: startedAt), now: startedAt)
 
         let beforeTTL = await store.snapshots(now: startedAt.addingTimeInterval(9))
         let afterTTL = await store.snapshots(now: startedAt.addingTimeInterval(11))
