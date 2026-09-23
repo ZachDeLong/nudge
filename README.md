@@ -61,8 +61,10 @@ Requirements: macOS 14+ and `jq` (the hook installer reads and rewrites `~/.clau
 ```sh
 nudge-update           # print current vs latest, exit 0
 nudge-update --check   # exit 1 if an update is available (handy in scripts)
-nudge-update --apply   # download Nudge.app.zip, swap, relaunch
+nudge-update --apply   # verify checksum, download Nudge.app.zip, swap, relaunch
 ```
+
+`--apply` checks the download against the `Nudge.app.zip.sha256` published with each release, and refuses to touch `/Applications/Nudge.app` if it doesn't match or if the release has no checksum attached. Releases before v1.2.2 predate the checksum, so updating from one needs `--apply --no-verify`. Since the build is unsigned there's no Gatekeeper check behind this — it's a tripwire for a truncated or tampered download, not a substitute for notarization.
 
 Releases are produced by `.github/workflows/release.yml` on `v*` tag pushes. The workflow refuses to publish unless `Resources-Info.plist`'s `CFBundleShortVersionString` matches the tag, so bump the plist before tagging.
 
@@ -76,7 +78,7 @@ Two halves:
 - **The permission hook** is a small Swift CLI at `Nudge.app/Contents/MacOS/nudge-hook`. Claude Code runs it via `PreToolUse`. It reads the tool call from stdin, checks `patterns.txt`, and POSTs to the app with a local bearer token if there's a match. Then it blocks until you click Allow or Deny.
 - **The agent hook** is a non-blocking Swift CLI at `Nudge.app/Contents/MacOS/nudge-agent-hook`. Claude Code runs it for lifecycle/tool events like `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, and `Stop`, so Nudge can show whether a mirrored session is thinking, using a tool, waiting, idle, failed, or ended.
 
-If the app isn't running when the hook fires, the hook auto-launches it via `open -ga Nudge`. If anything fails, the hook exits silently and Claude falls back to its normal terminal prompt.
+If the app isn't running when the hook fires, the hook auto-launches it via `open -ga Nudge` — unless you quit it deliberately, in which case it stays quit until you start it yourself. If anything fails, the hook exits silently and Claude falls back to its normal terminal prompt.
 
 On first launch, Nudge creates `~/.config/nudge/token` with a random local bearer token. The server requires that token for `/prompt` and `/ask`, which keeps unrelated local processes from casually posting fake prompts if they discover the port.
 
@@ -100,9 +102,9 @@ Click the menu bar icon when there's no prompt up. The idle popover doubles as a
 ![Settings popover](./docs/img/settings.png)
 
 
-- **Pause Nudge / Resume Nudge.** Master switch. Paused = the hook exits silently and Claude falls back to its native terminal prompt. The status pill and icon both reflect the current state.
+- **Pause Nudge / Resume Nudge.** Master switch. Paused = both hooks exit silently and Claude falls back to its native terminal prompt. That covers the agent hook too, so a paused Nudge stops collecting activity as well as popping panels. The status pill and icon both reflect the current state.
 - **Skip when terminal is focused** (on by default). When the frontmost app is a known terminal or IDE (Ghostty, iTerm2, Terminal.app, Warp, wezterm, Hyper, VS Code, Cursor), the hook skips the popover. You're already there; Claude's native prompt is fine.
-- **Quit Nudge.** Exits the menu bar app entirely. The hook auto-launches it again on the next call.
+- **Quit Nudge.** Exits the menu bar app entirely and stays exited — the hooks won't relaunch it behind your back. Start it again from Spotlight or `/Applications` and auto-launch resumes. (A crash is different: that still auto-recovers on the next hook call.)
 
 Right-clicking the icon opens the same toggles as a context menu, in case that's the gesture you reach for.
 

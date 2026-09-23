@@ -2,6 +2,22 @@ import Foundation
 import Network
 import NudgeCore
 
+/// One-shot latch safe to read from concurrent callbacks. Exists so a
+/// continuation can be resumed exactly once from `NWListener`'s state handler.
+private final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var taken = false
+
+    /// Returns true exactly once, to the first caller.
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if taken { return false }
+        taken = true
+        return true
+    }
+}
+
 actor PromptServer {
     private static let maxAgentEventBodyBytes = 32 * 1024
     private static let maxRequestBytes = 1024 * 1024
@@ -39,18 +55,19 @@ actor PromptServer {
         }
 
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            var resumed = false
+            // NWListener delivers state updates on the queue we hand it, which
+            // is concurrent, so the once-only latch has to be atomic rather than
+            // a captured `var` — resuming a continuation twice is a crash, and
+            // the plain capture is a hard error under the Swift 6 language mode.
+            let resumed = OnceFlag()
             listener.stateUpdateHandler = { state in
-                if resumed { return }
                 if case .ready = state {
                     if let port = listener.port {
                         Task { await self.setBoundPort(port.rawValue) }
                     }
-                    resumed = true
-                    cont.resume()
+                    if resumed.claim() { cont.resume() }
                 } else if case .failed(let err) = state {
-                    resumed = true
-                    cont.resume(throwing: err)
+                    if resumed.claim() { cont.resume(throwing: err) }
                 }
             }
             listener.start(queue: .global())
@@ -92,6 +109,13 @@ actor PromptServer {
                 return
             } catch HTTPCodec.ParseError.needMoreData {
                 continue
+            } catch HTTPCodec.ParseError.bodyTooLarge {
+                // Declared body exceeds the codec cap. Reject on the headers
+                // alone instead of buffering toward maxRequestBytes first.
+                let resp = HTTPCodec.writeResponse(status: 413, contentType: "text/plain", body: Array("payload too large".utf8))
+                await sendAndAwait(Data(resp), on: connection)
+                connection.cancel()
+                return
             } catch {
                 let resp = HTTPCodec.writeResponse(status: 400, contentType: "text/plain", body: Array("bad request".utf8))
                 connection.send(content: Data(resp), completion: .contentProcessed { _ in connection.cancel() })

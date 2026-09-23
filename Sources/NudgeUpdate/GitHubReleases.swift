@@ -22,7 +22,19 @@ enum GitHubReleases {
 
     struct Release {
         let tag: String
-        let assetURL: URL?  // download URL for `Nudge.app.zip`, if attached
+        let assetURL: URL?    // download URL for `Nudge.app.zip`, if attached
+        let checksumURL: URL? // download URL for `<asset>.sha256`, if attached
+    }
+
+    /// Release assets must be served by GitHub itself. `browser_download_url`
+    /// comes back inside a JSON body, so pinning the host keeps a malformed or
+    /// tampered API response from pointing the downloader somewhere else.
+    /// (GitHub redirects to objects.githubusercontent.com; URLSession follows
+    /// that on its own, and the redirect target is GitHub's to choose.)
+    static let allowedAssetHost = "github.com"
+
+    static func isTrustedAssetURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "https" && url.host?.lowercased() == allowedAssetHost
     }
 
     /// `repo` is `owner/name`, e.g. `ZachDeLong/nudge`.
@@ -48,9 +60,18 @@ enum GitHubReleases {
                 throw Failure.malformed("missing tag_name")
             }
             let assets = root["assets"] as? [[String: Any]] ?? []
-            let asset = assets.first { ($0["name"] as? String) == assetName }
-            let assetURL = (asset?["browser_download_url"] as? String).flatMap(URL.init(string:))
-            return Release(tag: tag, assetURL: assetURL)
+            func downloadURL(named name: String) -> URL? {
+                guard let asset = assets.first(where: { ($0["name"] as? String) == name }),
+                      let raw = asset["browser_download_url"] as? String,
+                      let url = URL(string: raw),
+                      isTrustedAssetURL(url) else { return nil }
+                return url
+            }
+            return Release(
+                tag: tag,
+                assetURL: downloadURL(named: assetName),
+                checksumURL: downloadURL(named: assetName + ".sha256")
+            )
         }
     }
 

@@ -38,16 +38,29 @@ public actor PromptQueue {
         }
     }
 
-    public func resolveHead(with response: DecisionResponse) {
-        guard !pending.isEmpty else { return }
-        let head = pending.removeFirst()
+    /// Resolves the head only if it's still the prompt the caller was looking
+    /// at. Pass the id the UI rendered.
+    ///
+    /// Without the id check this resolved whatever happened to be first, so a
+    /// head that timed out between render and click would hand your Allow to
+    /// the *next* prompt — approving a command you never read. The window is
+    /// milliseconds, but it's the exact failure this app exists to prevent, so
+    /// a stale click is dropped rather than guessed at.
+    ///
+    /// Returns true if the prompt was resolved.
+    @discardableResult
+    public func resolve(id: String, with response: DecisionResponse) -> Bool {
+        guard let head = pending.first, head.prompt.id == id else { return false }
+        pending.removeFirst()
         head.continuation.resume(returning: response)
         notifyHead()
+        return true
     }
 
     /// Convenience for permission decisions.
-    public func resolveHead(with decision: Decision) {
-        resolveHead(with: DecisionResponse(decision: decision))
+    @discardableResult
+    public func resolve(id: String, with decision: Decision) -> Bool {
+        resolve(id: id, with: DecisionResponse(decision: decision))
     }
 
     public func setOnHeadChange(_ cb: @escaping (Prompt?, Int) -> Void) {

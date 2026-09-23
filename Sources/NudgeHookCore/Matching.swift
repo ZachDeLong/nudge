@@ -74,10 +74,18 @@ public func globMatch(path: String, glob: String) -> Bool {
 }
 
 /// Splits a bash command into top-level subcommands by recognizing sequencing
-/// operators (`&&`, `||`, `;`, `|`, `&`) outside of quotes, command substitutions,
-/// arithmetic expansions, backticks, subshell groups, and brace groups. Skips
-/// `&` adjacent to redirection syntax (`&>`, `2>&1`). Not a full bash parser —
-/// covers the shapes Claude Code actually emits.
+/// operators (`&&`, `||`, `;`, `|`, `&`) and unquoted newlines outside of quotes,
+/// command substitutions, arithmetic expansions, backticks, subshell groups, and
+/// brace groups. Skips `&` adjacent to redirection syntax (`&>`, `2>&1`). Not a
+/// full bash parser — covers the shapes Claude Code actually emits.
+///
+/// Newlines separate commands exactly like `;` does, because Claude Code emits
+/// multi-line bash constantly and treating the whole block as one segment meant
+/// `Bash(rm:*)` never fired on `ls\nrm -rf foo`. A `\` line continuation is
+/// consumed by the escape branch above, so continued lines stay joined.
+///
+/// Heredoc bodies do get split, which yields extra candidate segments. That errs
+/// toward more prompts, never fewer, so it's the safe direction to be wrong in.
 public func splitBashCommand(_ command: String) -> [String] {
     var segments: [String] = []
     var current = ""
@@ -235,7 +243,7 @@ public func splitBashCommand(_ command: String) -> [String] {
             i = command.index(after: i)
             continue
         }
-        if c == ";" || c == "|" {
+        if c == ";" || c == "|" || c.isNewline {
             flush()
             i = command.index(after: i)
             continue
@@ -327,14 +335,41 @@ public func normalizeForInfix(_ s: String) -> String {
     return out.lowercased()
 }
 
+/// Collapses runs of spaces and tabs to a single space and trims the ends, so
+/// `git  push` and `git\tpush` both match a `Bash(git push:*)` prefix. The
+/// pattern author writes one spacing; the agent emits whatever it emits.
+///
+/// Only horizontal whitespace — newlines are a command separator (see
+/// `splitBashCommand`), not padding, and any that survive into a segment came
+/// from inside quotes or a group where they're significant.
+public func collapseWhitespace(_ s: String) -> String {
+    var out = ""
+    var lastWasSpace = false
+    for ch in s {
+        if ch == " " || ch == "\t" {
+            if !lastWasSpace { out.append(" ") }
+            lastWasSpace = true
+        } else {
+            out.append(ch)
+            lastWasSpace = false
+        }
+    }
+    return out.trimmingCharacters(in: .whitespaces)
+}
+
 /// True if `segment` starts with `prefix` at a token boundary — segment equals
 /// prefix exactly, or the next char after the prefix is whitespace. Stops
 /// `Bash(rm:*)` from matching `rmdir` while still matching `rm` and `rm -rf foo`.
+/// Both sides are whitespace-collapsed first so spacing variation doesn't
+/// silently drop the match.
 public func hasTokenPrefix(_ segment: String, prefix: String) -> Bool {
-    if segment == prefix { return true }
-    guard segment.hasPrefix(prefix) else { return false }
-    let nextIdx = segment.index(segment.startIndex, offsetBy: prefix.count)
-    return segment[nextIdx].isWhitespace
+    let seg = collapseWhitespace(segment)
+    let pre = collapseWhitespace(prefix)
+    guard !pre.isEmpty else { return false }
+    if seg == pre { return true }
+    guard seg.hasPrefix(pre) else { return false }
+    let nextIdx = seg.index(seg.startIndex, offsetBy: pre.count)
+    return seg[nextIdx].isWhitespace
 }
 
 /// Returns the matched pattern (the literal string from patterns.txt), or nil
@@ -386,7 +421,8 @@ public func matchedPattern(toolName: String, target: String, patterns: [String])
                     firstPromotable = pattern
                 }
             } else {
-                if candidates.contains(where: { $0 == inner }), firstPromotable == nil {
+                let exact = collapseWhitespace(inner)
+                if candidates.contains(where: { collapseWhitespace($0) == exact }), firstPromotable == nil {
                     firstPromotable = pattern
                 }
             }

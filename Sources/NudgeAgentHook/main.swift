@@ -1,6 +1,16 @@
 import Foundation
 import NudgeCore
 
+// Master switch, same as nudge-hook. The activity side channel is still Nudge,
+// so a paused Nudge shouldn't keep collecting. Checked before reading stdin to
+// match nudge-hook's ordering.
+//
+// Deliberately does NOT honor `skipWhenTerminalFocused`: that toggle exists to
+// suppress redundant popovers when you're already looking at the terminal, and
+// this hook shows no UI. Skipping on it would just punch holes in the activity
+// timeline the mirror panel reads from.
+guard Prefs.load().enabled else { exit(0) }
+
 let inputData = FileHandle.standardInput.readDataToEndOfFile()
 guard let inputJSON = try? JSONSerialization.jsonObject(with: inputData) as? [String: Any] else {
     exit(0)

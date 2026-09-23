@@ -28,6 +28,63 @@ final class HTTPCodecTests: XCTestCase {
         }
     }
 
+    // MARK: Content-Length validation (regression)
+    //
+    // `Content-Length: <Int.max>` used to reach `bodyStart + parsedLength` and
+    // trap the process on overflow. Parsing happens before the auth check, so
+    // any local process could crash Nudge with one unauthenticated request.
+
+    func testRejectsOverflowingContentLength() {
+        let raw = "POST /prompt HTTP/1.1\r\nContent-Length: 9223372036854775807\r\n\r\n"
+        XCTAssertThrowsError(try HTTPCodec.parseRequest(Array(raw.utf8))) { err in
+            guard case HTTPCodec.ParseError.bodyTooLarge = err else {
+                return XCTFail("expected .bodyTooLarge, got \(err)")
+            }
+        }
+    }
+
+    func testRejectsContentLengthAboveCap() {
+        let raw = "POST /prompt HTTP/1.1\r\nContent-Length: \(HTTPCodec.maxBodyBytes + 1)\r\n\r\n"
+        XCTAssertThrowsError(try HTTPCodec.parseRequest(Array(raw.utf8))) { err in
+            guard case HTTPCodec.ParseError.bodyTooLarge = err else {
+                return XCTFail("expected .bodyTooLarge, got \(err)")
+            }
+        }
+    }
+
+    func testRejectsNegativeContentLength() {
+        let raw = "POST /prompt HTTP/1.1\r\nContent-Length: -1\r\n\r\n"
+        XCTAssertThrowsError(try HTTPCodec.parseRequest(Array(raw.utf8))) { err in
+            guard case HTTPCodec.ParseError.malformed = err else {
+                return XCTFail("expected .malformed, got \(err)")
+            }
+        }
+    }
+
+    /// A non-numeric length is a malformed request, not a zero-length body —
+    /// the old `?? 0` fallback silently truncated instead of rejecting.
+    func testRejectsNonNumericContentLength() {
+        let raw = "POST /prompt HTTP/1.1\r\nContent-Length: abc\r\n\r\n{}"
+        XCTAssertThrowsError(try HTTPCodec.parseRequest(Array(raw.utf8))) { err in
+            guard case HTTPCodec.ParseError.malformed = err else {
+                return XCTFail("expected .malformed, got \(err)")
+            }
+        }
+    }
+
+    func testAcceptsContentLengthAtCap() throws {
+        let body = String(repeating: "x", count: HTTPCodec.maxBodyBytes)
+        let raw = "POST /prompt HTTP/1.1\r\nContent-Length: \(HTTPCodec.maxBodyBytes)\r\n\r\n" + body
+        let req = try HTTPCodec.parseRequest(Array(raw.utf8))
+        XCTAssertEqual(req.body.count, HTTPCodec.maxBodyBytes)
+    }
+
+    func testMissingContentLengthMeansEmptyBody() throws {
+        let raw = "POST /prompt HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        let req = try HTTPCodec.parseRequest(Array(raw.utf8))
+        XCTAssertEqual(req.body.count, 0)
+    }
+
     func testWritesJSONResponse() {
         let body = "{\"decision\":\"allow\"}".data(using: .utf8)!
         let bytes = HTTPCodec.writeResponse(status: 200, contentType: "application/json", body: Array(body))

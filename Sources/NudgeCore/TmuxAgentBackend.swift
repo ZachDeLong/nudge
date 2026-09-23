@@ -56,7 +56,7 @@ public struct TmuxAgentBackend: Sendable {
         do {
             try AgentSessionFiles.write(summary)
         } catch {
-            try? run(["kill-session", "-t", tmuxSession])
+            _ = try? run(["kill-session", "-t", tmuxSession])
             throw error
         }
         return summary

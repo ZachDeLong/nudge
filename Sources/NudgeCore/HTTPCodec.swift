@@ -17,7 +17,15 @@ public enum HTTPCodec {
     public enum ParseError: Error, Equatable {
         case malformed
         case needMoreData
+        case bodyTooLarge
     }
+
+    /// Upper bound on a declared request body. A `Content-Length` above this is
+    /// rejected before it reaches any arithmetic — `Content-Length: <Int.max>`
+    /// would otherwise overflow `bodyStart + parsedLength` and trap the whole
+    /// process, and parsing runs before the auth check, so any local process
+    /// could crash Nudge with one unauthenticated request.
+    public static let maxBodyBytes = 1024 * 1024
 
     /// Parses one HTTP/1.1 request from `bytes`.
     /// Throws `.needMoreData` if the buffer is incomplete.
@@ -43,11 +51,21 @@ public enum HTTPCodec {
             headers[key] = val
         }
         let bodyStart = headerEnd + 4
-        let parsedLength = Int(headers["Content-Length"] ?? "0") ?? 0
-        guard parsedLength >= 0 else {
-            throw ParseError.malformed
+        let parsedLength: Int
+        if let rawLength = headers["Content-Length"] {
+            // A value that isn't a plain non-negative integer is a malformed
+            // request, not a zero-length body — falling back to 0 would let a
+            // bogus header silently truncate the body instead of rejecting it.
+            guard let n = Int(rawLength), n >= 0 else { throw ParseError.malformed }
+            guard n <= maxBodyBytes else { throw ParseError.bodyTooLarge }
+            parsedLength = n
+        } else {
+            parsedLength = 0
         }
-        guard bytes.count >= bodyStart + parsedLength else {
+        // Subtract rather than add: `findSequence` guarantees bodyStart <=
+        // bytes.count, so this can't underflow, and it never overflows the way
+        // `bodyStart + parsedLength` can.
+        guard bytes.count - bodyStart >= parsedLength else {
             throw ParseError.needMoreData
         }
         let body = Array(bytes[bodyStart..<bodyStart + parsedLength])

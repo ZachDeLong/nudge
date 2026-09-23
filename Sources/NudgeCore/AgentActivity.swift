@@ -172,7 +172,7 @@ public actor AgentActivityStore {
         self.maxSnapshots = max(1, maxSnapshots)
     }
 
-    public func record(_ event: AgentHookEvent) {
+    public func record(_ event: AgentHookEvent, now: Date = Date()) {
         let key = key(for: event)
         if var snapshot = byKey[key] {
             snapshot.apply(event)
@@ -180,7 +180,11 @@ public actor AgentActivityStore {
         } else {
             byKey[key] = AgentActivitySnapshot(event: event)
         }
-        prune(referenceDate: event.occurredAt)
+        // Prune against our own clock, not `event.occurredAt`. That field comes
+        // off the wire, so a skewed or hostile timestamp far in the future would
+        // age out every ended snapshot at once. It stays authoritative for
+        // display and ordering — just not for deciding what to evict.
+        prune(referenceDate: now)
     }
 
     public func snapshots(now: Date = Date()) -> [AgentActivitySnapshot] {

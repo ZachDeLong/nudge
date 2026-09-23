@@ -3,9 +3,7 @@ import AppKit
 import NudgeCore
 
 struct PopoverView: View {
-    let prompt: Prompt?
-    let queueDepth: Int
-    let prefs: Prefs
+    @ObservedObject var state: PromptStore
     let onAllow: () -> Void
     let onDeny: () -> Void
     let onAlwaysAllow: () -> Void
@@ -22,17 +20,27 @@ struct PopoverView: View {
     let onEndAgentSession: (String) -> Void
     let onRenameAgentSession: (String, String?) -> Void
 
+    static let width: CGFloat = 420
+    static let cornerRadius: CGFloat = 14
+
+    /// Cross-fade with a hair of scale, the way Control Center swaps content.
+    /// Old and new overlap in a ZStack so nothing stacks or jumps mid-fade.
+    static let switchTransition: AnyTransition = .opacity.combined(with: .scale(scale: 0.985))
+
     var body: some View {
-        VStack(spacing: 0) {
-            if let prompt = prompt {
-                content(for: prompt)
+        ZStack(alignment: .top) {
+            if let prompt = state.prompt {
+                VStack(spacing: 0) { content(for: prompt) }
+                    .id(prompt.id)
+                    .transition(Self.switchTransition)
             } else {
-                idle()
+                VStack(spacing: 0) { idle() }
+                    .transition(Self.switchTransition)
             }
         }
         .padding(16)
-        .frame(width: 420)
-        .background(VisualEffectBackground())
+        .frame(width: Self.width)
+        .background(PopoverBackground(cornerRadius: Self.cornerRadius))
     }
 
     @ViewBuilder
@@ -49,42 +57,54 @@ struct PopoverView: View {
 
     @ViewBuilder
     private func permissionContent(for prompt: Prompt) -> some View {
-        header(prompt: prompt, title: "Permission request")
+        header(prompt: prompt, title: PromptCopy.title(for: prompt))
 
         let trimmed = prompt.command.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasCommand = !trimmed.isEmpty
 
         if hasCommand {
             commandBox(for: prompt)
-                .padding(.bottom, 12)
         } else {
-            HStack(spacing: 8) {
-                Image(systemName: "questionmark.circle")
-                    .foregroundColor(.secondary)
-                Text("\(prompt.tool) operation in \(URL(fileURLWithPath: prompt.cwd).lastPathComponent)")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
-            .padding(.bottom, 12)
+            InfoRow(
+                symbol: "questionmark.circle",
+                text: "\(prompt.tool) operation in \(PromptCopy.projectName(prompt))"
+            )
         }
 
-        let offerOptions = hasCommand && isPromotablePattern(prompt.matchedPattern)
+        if let pattern = prompt.matchedPattern, !pattern.isEmpty {
+            HStack(spacing: 5) {
+                Image(systemName: "scope")
+                    .font(.system(size: 10, weight: .medium))
+                (Text("Matched ")
+                    .font(.system(size: 10.5))
+                + Text(pattern)
+                    .font(.system(size: 10.5, design: .monospaced)))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
+            .help("The pattern in ~/.config/nudge/patterns.txt that routed this prompt to Nudge")
+        }
 
-        HStack(spacing: 8) {
+        let offerOptions = hasCommand && Promotion.isPromotable(prompt.matchedPattern)
+
+        ZStack {
+          if let notice = state.notice {
+            NoticeRow(notice: notice)
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+          } else {
+          HStack(spacing: 8) {
             Button(action: onDeny) {
-                Text("Deny")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(maxWidth: .infinity)
+                ButtonLabel(title: "Deny", key: "esc")
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
             .keyboardShortcut(.cancelAction)
 
             Button(action: onAllow) {
-                Text("Allow")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(maxWidth: .infinity)
+                ButtonLabel(title: "Allow", key: "⏎", weight: .semibold, prominent: true)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -93,7 +113,7 @@ struct PopoverView: View {
             if offerOptions {
                 Menu {
                     Button("Allow for this session", action: onSessionAllow)
-                    Button("Always allow this command", action: onAlwaysAllow)
+                    Button("Always allow \(Promotion.menuLabel(for: prompt))", action: onAlwaysAllow)
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 13, weight: .semibold))
@@ -103,9 +123,13 @@ struct PopoverView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .frame(width: 40)
-                .help("More options")
+                .help("Allow for this session, or always")
             }
+          }
+          .transition(.opacity)
+          }
         }
+        .padding(.top, 12)
     }
 
     // MARK: - Ask flow
@@ -113,7 +137,7 @@ struct PopoverView: View {
     @ViewBuilder
     private func askContent(for prompt: Prompt) -> some View {
         header(prompt: prompt, title: "Claude is asking")
-        AskBody(question: prompt.command, onSubmit: onSubmitText, onCancel: onCancelAsk)
+        AskBody(question: prompt.command, notice: state.notice, onSubmit: onSubmitText, onCancel: onCancelAsk)
     }
 
     // MARK: - Shared header
@@ -125,18 +149,15 @@ struct PopoverView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                Text("\(prompt.tool) · \(URL(fileURLWithPath: prompt.cwd).lastPathComponent)")
+                Text("\(prompt.tool) · \(PromptCopy.projectName(prompt))")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
             Spacer(minLength: 8)
-            if queueDepth > 1 {
-                Text("\(queueDepth - 1) queued")
-                    .font(.system(size: 10, weight: .medium))
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.08))
-                    .foregroundColor(.secondary)
-                    .clipShape(Capsule())
+            if state.queueDepth > 1 {
+                QueuePill(waiting: state.queueDepth - 1)
             }
         }
         .padding(.bottom, 12)
@@ -147,7 +168,7 @@ struct PopoverView: View {
         ScrollView(.vertical, showsIndicators: true) {
             Group {
                 if prompt.tool == "Bash" {
-                    Text(highlight(command: prompt.command))
+                    Text(CommandHighlighter.highlight(prompt.command))
                 } else {
                     Text(prompt.command)
                 }
@@ -160,97 +181,51 @@ struct PopoverView: View {
         .frame(maxHeight: 140)
         .fixedSize(horizontal: false, vertical: false)
         .background(Color.primary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private func isPromotablePattern(_ pattern: String?) -> Bool {
-        guard let p = pattern, p.hasPrefix("Bash("), p.hasSuffix(")") else {
-            // Path-based patterns (Edit/Write/Read/...) are always promotable.
-            if let p = pattern,
-               (p.hasPrefix("Edit(") || p.hasPrefix("Write(") || p.hasPrefix("Read(")
-                || p.hasPrefix("MultiEdit(") || p.hasPrefix("NotebookEdit(")) {
-                return true
-            }
-            // Mcp() patterns are only promotable when they're exact (no `*`),
-            // because Claude Code's permissions.allow can't express MCP globs
-            // beyond `mcp__server` (whole server) or `mcp__server__tool` (one).
-            if let p = pattern, p.hasPrefix("Mcp("), p.hasSuffix(")") {
-                let inner = String(p.dropFirst(4).dropLast())
-                return !inner.contains("*")
-            }
-            return false
-        }
-        let inner = String(p.dropFirst(5).dropLast())
-        if inner.hasPrefix("*") && inner.hasSuffix("*") { return false }
-        return true
-    }
+    // MARK: - Idle
 
-    private func highlight(command: String) -> AttributedString {
-        var result = AttributedString()
-        let tokens = command.split(separator: " ", omittingEmptySubsequences: false)
-        let isPush = command.contains("git push")
-        let isReset = command.contains("git reset") || command.contains("git rebase")
-
-        let alwaysDangerous: Set<String> = [
-            "--force", "-f", "-rf", "-fr", "-Rf", "-fR", "--hard",
-            "--no-verify", "--force-with-lease",
-        ]
-        let dangerousBranches: Set<String> = ["main", "master", "production", "prod", "release"]
-
-        for (i, raw) in tokens.enumerated() {
-            let token = String(raw)
-            var attr = AttributedString(token)
-
-            let isFlag = alwaysDangerous.contains(token) || token.hasPrefix("-rf") || token.hasPrefix("-fr")
-            let isDangerousBranch = (isPush || isReset) && dangerousBranches.contains(token)
-
-            if isFlag || isDangerousBranch {
-                attr.foregroundColor = .red
-                attr.font = .system(size: 12, weight: .semibold, design: .monospaced)
-            }
-            result += attr
-            if i < tokens.count - 1 {
-                result += AttributedString(" ")
-            }
-        }
-        return result
-    }
+    private static let appVersion: String? =
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
 
     @ViewBuilder
     private func idle() -> some View {
+        let prefs = state.prefs
         VStack(alignment: .leading, spacing: 14) {
-            // Status row: brand badge + state pill
+            // Status row — brand badge, state, master switch. Mirrors a Control
+            // Center module header: the switch *is* the primary action.
             HStack(spacing: 11) {
-                ToolBadge(tool: "Bash") // generic Nudge badge
+                ToolBadge(tool: "Bash", dimmed: !prefs.enabled)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Nudge")
                         .font(.system(size: 13, weight: .semibold))
-                    Text(prefs.enabled ? "Watching for permission requests" : "Paused")
+                    Text(prefs.enabled
+                         ? "Watching for permission requests"
+                         : "Paused · prompts stay in the terminal")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                StatusDot(active: prefs.enabled)
+                Toggle("Nudge enabled", isOn: Binding(
+                    get: { prefs.enabled },
+                    set: { _ in onTogglePause() }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help(prefs.enabled ? "Pause Nudge" : "Resume Nudge")
             }
 
-            // Pause / Resume — primary action.
-            Button(action: onTogglePause) {
-                Text(prefs.enabled ? "Pause Nudge" : "Resume Nudge")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-
-            // Settings toggle — checkbox-style row.
-            Toggle(isOn: Binding(
-                get: { prefs.skipWhenTerminalFocused },
-                set: { _ in onToggleSkipTerminal() }
-            )) {
-                Text("Skip when terminal is focused")
-                    .font(.system(size: 12))
-            }
-            .toggleStyle(.checkbox)
+            SettingRow(
+                symbol: "macwindow",
+                title: "Skip when terminal is focused",
+                detail: "Stay quiet while a terminal or IDE is in front",
+                isOn: Binding(
+                    get: { prefs.skipWhenTerminalFocused },
+                    set: { _ in onToggleSkipTerminal() }
+                )
+            )
 
             Divider()
 
@@ -263,16 +238,92 @@ struct PopoverView: View {
                 onRenameSession: onRenameAgentSession
             )
 
-            HStack {
+            Divider()
+
+            HStack(alignment: .firstTextBaseline) {
+                if let version = Self.appVersion {
+                    Text("Nudge \(version)")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.tertiary)
+                }
                 Spacer()
                 Button(action: onQuit) {
                     Text("Quit Nudge")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
         }
+    }
+}
+
+// MARK: - Copy
+
+/// User-facing strings derived from a prompt. Titles follow the macOS
+/// permission-alert idiom ("“Safari” would like to…") so the popover reads
+/// like the OS asking, not like a log line.
+enum PromptCopy {
+    static func title(for prompt: Prompt) -> String {
+        switch prompt.tool {
+        case "Bash":
+            return "Claude wants to run a command"
+        case "Edit", "MultiEdit", "NotebookEdit":
+            return "Claude wants to edit a file"
+        case "Write":
+            return "Claude wants to write a file"
+        case "Read":
+            return "Claude wants to read a file"
+        case "WebFetch", "WebSearch":
+            return "Claude wants to reach the web"
+        case let tool where tool.hasPrefix("mcp__"):
+            return "Claude wants to use an MCP tool"
+        default:
+            return "Claude wants to use \(prompt.tool)"
+        }
+    }
+
+    static func projectName(_ prompt: Prompt) -> String {
+        let name = URL(fileURLWithPath: prompt.cwd).lastPathComponent
+        return name.isEmpty ? prompt.cwd : name
+    }
+}
+
+/// Paints the dangerous parts of a shell command red: force flags, hard
+/// resets, and protected branch names on push/reset/rebase.
+enum CommandHighlighter {
+    private static let alwaysDangerous: Set<String> = [
+        "--force", "-f", "-rf", "-fr", "-Rf", "-fR", "--hard",
+        "--no-verify", "--force-with-lease",
+    ]
+    private static let dangerousBranches: Set<String> = [
+        "main", "master", "production", "prod", "release",
+    ]
+
+    static func highlight(_ command: String) -> AttributedString {
+        var result = AttributedString()
+        let tokens = command.split(separator: " ", omittingEmptySubsequences: false)
+        let isPush = command.contains("git push")
+        let isReset = command.contains("git reset") || command.contains("git rebase")
+
+        for (i, raw) in tokens.enumerated() {
+            let token = String(raw)
+            var attr = AttributedString(token)
+
+            let isFlag = alwaysDangerous.contains(token)
+                || token.hasPrefix("-rf") || token.hasPrefix("-fr")
+            let isDangerousBranch = (isPush || isReset) && dangerousBranches.contains(token)
+
+            if isFlag || isDangerousBranch {
+                attr.foregroundColor = .red
+                attr.font = .system(size: 12, weight: .semibold, design: .monospaced)
+            }
+            result += attr
+            if i < tokens.count - 1 {
+                result += AttributedString(" ")
+            }
+        }
+        return result
     }
 }
 
@@ -308,15 +359,15 @@ private struct AgentSessionsPanel: View {
             return title
         }
         let time = Self.sessionLabelTimeFormatter.string(from: session.createdAt)
-        let label = "\(session.kind.rawValue) - \(session.projectName) - \(time)"
-        return session.isEnded ? "\(label) - ended" : label
+        let label = "\(session.kind.rawValue) · \(session.projectName) · \(time)"
+        return session.isEnded ? "\(label) · ended" : label
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Text("Agent sessions")
                     .font(.system(size: 12, weight: .semibold))
                 Spacer()
@@ -346,15 +397,7 @@ private struct AgentSessionsPanel: View {
             }
 
             if store.sessions.isEmpty {
-                HStack(spacing: 8) {
-                    Image(systemName: "terminal")
-                        .foregroundColor(.secondary)
-                    Text("No mirrored sessions")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding(.vertical, 2)
+                InfoRow(symbol: "terminal", text: "No mirrored sessions · start one with nudge-claude")
             } else {
                 Picker("Session", selection: Binding(
                     get: { selectedID },
@@ -375,7 +418,7 @@ private struct AgentSessionsPanel: View {
                     transcriptView(detail.transcript)
 
                     if detail.summary.isEnded {
-                        endedSessionNotice()
+                        InfoRow(symbol: "exclamationmark.circle", text: "Session ended", boxed: true)
                     } else {
                         messageComposer(for: detail)
                     }
@@ -385,7 +428,7 @@ private struct AgentSessionsPanel: View {
             if let error = store.error, !error.isEmpty {
                 Text(error)
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
         }
@@ -415,7 +458,7 @@ private struct AgentSessionsPanel: View {
                 .frame(width: 7, height: 7)
             Text(activityText(activity))
                 .font(.system(size: 11))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
@@ -459,22 +502,6 @@ private struct AgentSessionsPanel: View {
     }
 
     @ViewBuilder
-    private func endedSessionNotice() -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.circle")
-                .foregroundColor(.secondary)
-            Text("Session ended")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-            Spacer()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.primary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    @ViewBuilder
     private func messageComposer(for detail: AgentSessionDetail) -> some View {
         HStack(spacing: 8) {
             TextField("Message \(detail.summary.kind.rawValue)", text: $draft, axis: .vertical)
@@ -484,7 +511,7 @@ private struct AgentSessionsPanel: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .background(Color.primary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .focused($inputFocused)
                 .onKeyPress(.return) {
                     if NSEvent.modifierFlags.contains(.shift) {
@@ -510,17 +537,22 @@ private struct AgentSessionsPanel: View {
 
     @ViewBuilder
     private func transcriptView(_ transcript: String) -> some View {
+        let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         ScrollView(.vertical, showsIndicators: true) {
-            Text(transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No output yet." : transcript)
+            Text(text.isEmpty ? "No output yet." : transcript)
                 .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(text.isEmpty ? .secondary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
         }
+        // Chat semantics: newest output lives at the bottom, so that is where
+        // the view rests — and stays as the mirror polls in fresh lines.
+        .defaultScrollAnchor(.bottom)
         .frame(maxHeight: 180)
         .background(Color.primary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func send() {
@@ -550,7 +582,7 @@ private struct AgentSessionsPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Rename session")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             TextField("Session name", text: $renameDraft)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 240)
@@ -573,10 +605,15 @@ private struct AgentSessionsPanel: View {
 
 private struct AskBody: View {
     let question: String
+    let notice: DecisionNotice?
     let onSubmit: (String) -> Void
     let onCancel: () -> Void
     @State private var text: String = ""
     @FocusState private var focused: Bool
+
+    private var isEmpty: Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -590,40 +627,57 @@ private struct AskBody: View {
             }
             .frame(maxHeight: 120)
             .background(Color.primary.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             // Answer field — TextField with vertical axis gives a multi-line
             // input with consistent padding (TextEditor adds its own and
-            // misaligns with placeholder).
-            TextField("Type your answer…", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .lineLimit(3...8)
-                .padding(.horizontal, 12).padding(.vertical, 10)
-                .background(Color.primary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .focused($focused)
+            // misaligns with placeholder). Enter sends; Shift+Enter breaks the
+            // line, matching the chat composer below the fold.
+            VStack(alignment: .trailing, spacing: 5) {
+                TextField("Type your answer…", text: $text, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .lineLimit(3...8)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(Color.primary.opacity(0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .focused($focused)
+                    .onKeyPress(.return) {
+                        if NSEvent.modifierFlags.contains(.shift) {
+                            return .ignored
+                        }
+                        submit()
+                        return .handled
+                    }
+                Text("⇧⏎ for a new line")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
 
             // Buttons
-            HStack(spacing: 8) {
-                Button(action: onCancel) {
-                    Text("Cancel")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .keyboardShortcut(.cancelAction)
+            ZStack {
+                if let notice {
+                    NoticeRow(notice: notice)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                } else {
+                    HStack(spacing: 8) {
+                        Button(action: onCancel) {
+                            ButtonLabel(title: "Cancel", key: "esc")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .keyboardShortcut(.cancelAction)
 
-                Button(action: submit) {
-                    Text("Send")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity)
+                        Button(action: submit) {
+                            ButtonLabel(title: "Send", key: "⏎", weight: .semibold, prominent: true)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(isEmpty)
+                    }
+                    .transition(.opacity)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .keyboardShortcut(.defaultAction)
-                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .onAppear { focused = true }
@@ -636,52 +690,210 @@ private struct AskBody: View {
     }
 }
 
-private struct StatusDot: View {
-    let active: Bool
+// MARK: - Small parts
+
+/// Stands in for the button row for a beat after a decision, so the click
+/// visibly landed before the panel moves on. The symbol bounces once.
+private struct NoticeRow: View {
+    let notice: DecisionNotice
+    @State private var bounced = false
+
     var body: some View {
-        Circle()
-            .fill(active ? Color.green : Color.secondary.opacity(0.5))
-            .frame(width: 8, height: 8)
+        HStack(spacing: 7) {
+            Image(systemName: notice.symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(notice.tint)
+                .symbolEffect(.bounce, options: .nonRepeating, value: bounced)
+            Text(notice.label)
+                .font(.system(size: 13, weight: .semibold))
+        }
+        .frame(maxWidth: .infinity, minHeight: 28)
+        .onAppear { bounced = true }
+    }
+}
+
+/// Button title with a keycap showing the shortcut that triggers it. The
+/// permission shortcuts are *global* (they fire from whatever app is in
+/// front), so making them visible matters more than it would in a dialog.
+private struct ButtonLabel: View {
+    let title: String
+    let key: String
+    var weight: Font.Weight = .medium
+    var prominent: Bool = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 13, weight: weight))
+            KeyCap(key, prominent: prominent)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct KeyCap: View {
+    let label: String
+    let prominent: Bool
+
+    init(_ label: String, prominent: Bool = false) {
+        self.label = label
+        self.prominent = prominent
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(prominent ? Color.white.opacity(0.9) : Color.secondary)
+            .padding(.horizontal, 4.5)
+            .padding(.vertical, 1.5)
+            .background(
+                prominent ? Color.white.opacity(0.22) : Color.primary.opacity(0.08),
+                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+            )
+    }
+}
+
+private struct QueuePill: View {
+    let waiting: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "tray.full")
+                .font(.system(size: 9, weight: .semibold))
+            Text("\(waiting) more")
+                .font(.system(size: 10, weight: .medium))
+        }
+        .padding(.horizontal, 7).padding(.vertical, 3)
+        .background(Color.primary.opacity(0.08))
+        .foregroundStyle(.secondary)
+        .clipShape(Capsule())
+        .help("\(waiting) more prompt\(waiting == 1 ? "" : "s") waiting behind this one")
+    }
+}
+
+/// Label + description + switch, laid out like a System Settings row.
+private struct SettingRow: View {
+    let symbol: String
+    let title: String
+    let detail: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 12))
+                Text(detail)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Toggle(title, isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+        }
+    }
+}
+
+/// Icon + one line of secondary text. `boxed` gives it the same inset card
+/// treatment as the command/transcript boxes.
+private struct InfoRow: View {
+    let symbol: String
+    let text: String
+    var boxed: Bool = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+        }
+        .padding(.horizontal, boxed ? 10 : 0)
+        .padding(.vertical, boxed ? 8 : 2)
+        .background(boxed ? Color.primary.opacity(0.06) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
 private struct ToolBadge: View {
     let tool: String
+    var dimmed: Bool = false
 
     var body: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(LinearGradient(
-                colors: [Color(red: 1.0, green: 0.42, blue: 0.21),
-                         Color(red: 0.81, green: 0.32, blue: 0.17)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            ))
+            .fill(fill)
             .frame(width: 32, height: 32)
             .overlay(
                 Image(systemName: symbol(for: tool))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .font(.system(size: 14, weight: .semibold))
             )
     }
 
+    private var fill: LinearGradient {
+        if dimmed {
+            return LinearGradient(
+                colors: [Color.gray.opacity(0.55), Color.gray.opacity(0.4)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        }
+        return LinearGradient(
+            colors: [Color(red: 1.0, green: 0.42, blue: 0.21),
+                     Color(red: 0.81, green: 0.32, blue: 0.17)],
+            startPoint: .topLeading, endPoint: .bottomTrailing
+        )
+    }
+
     private func symbol(for tool: String) -> String {
         switch tool {
-        case "Bash":            return "terminal.fill"
-        case "Edit", "Write":   return "pencil"
-        case "Read":            return "eye.fill"
-        case "Glob", "Grep":    return "magnifyingglass"
-        case "Ask":             return "bubble.left.fill"
-        default:                return "sparkles"
+        case "Bash":                                return "terminal.fill"
+        case "Edit", "Write", "MultiEdit",
+             "NotebookEdit":                        return "pencil"
+        case "Read":                                return "eye.fill"
+        case "Glob", "Grep":                        return "magnifyingglass"
+        case "WebFetch", "WebSearch":               return "globe"
+        case "Ask":                                 return "bubble.left.fill"
+        case let t where t.hasPrefix("mcp__"):      return "puzzlepiece.extension.fill"
+        default:                                    return "sparkles"
         }
     }
 }
 
-private struct VisualEffectBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
+/// Liquid Glass on macOS 26, the classic popover material before that. Both
+/// sample what is behind the window, so the panel reads as part of the menu
+/// bar system rather than a floating card.
+private struct PopoverBackground: NSViewRepresentable {
+    let cornerRadius: CGFloat
+
+    func makeNSView(context: Context) -> NSView {
+        if PreviewRenderer.isRendering {
+            let flat = NSView()
+            flat.wantsLayer = true
+            flat.layer?.backgroundColor = NSColor(calibratedRed: 0.14, green: 0.14, blue: 0.15, alpha: 1).cgColor
+            return flat
+        }
+        if #available(macOS 26, *) {
+            let glass = NSGlassEffectView()
+            glass.style = .regular
+            glass.cornerRadius = cornerRadius
+            return glass
+        }
         let v = NSVisualEffectView()
         v.material = .popover
         v.blendingMode = .behindWindow
         v.state = .active
         return v
     }
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

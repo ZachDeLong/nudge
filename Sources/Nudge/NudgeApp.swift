@@ -20,6 +20,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        // Dev mode: render popover states to PNG and exit. Runs before the
+        // server or status item exist, so it never disturbs a live Nudge.
+        if let dir = PreviewRenderer.requestedDirectory() {
+            Task { @MainActor in
+                do {
+                    try PreviewRenderer.renderAll(to: dir)
+                    print("Wrote previews to \(dir.path)")
+                    exit(0)
+                } catch {
+                    FileHandle.standardError.write("Preview render failed: \(error)\n".data(using: .utf8)!)
+                    exit(1)
+                }
+            }
+            return
+        }
+
+        // However we got here, Nudge is wanted again — clear any suppression
+        // left behind by a previous Quit so hooks can auto-launch as normal.
+        AutoLaunch.allow()
+
         Task { @MainActor in
             self.menuBar = MenuBarController(queue: queue, activityStore: activityStore)
         }
@@ -51,5 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         Task { await server?.stop() }
         try? FileManager.default.removeItem(at: PortFile.defaultURL)
+        // Only reached on a deliberate quit — a crash or `pkill` skips this, so
+        // unexpected exits still auto-recover on the next hook call.
+        AutoLaunch.suppress()
     }
 }

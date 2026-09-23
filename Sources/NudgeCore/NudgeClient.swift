@@ -12,12 +12,17 @@ public enum NudgeClientError: Error, Equatable {
 public enum NudgeClient {
     public static func locatePort(
         portFileURL: URL = PortFile.defaultURL,
-        launchTimeout: TimeInterval = 2.0
+        launchTimeout: TimeInterval = 2.0,
+        autoLaunchMarkerURL: URL = AutoLaunch.markerURL,
+        appName: String = "Nudge"
     ) -> UInt16? {
         if let port = readPort(from: portFileURL), probe(port: port) {
             return port
         }
-        return launchAndWaitForPort(portFileURL: portFileURL, timeout: launchTimeout)
+        // Still connect to a running Nudge above; only the resurrection below
+        // is gated. If the user quit deliberately, leave it quit.
+        guard !AutoLaunch.isSuppressed(at: autoLaunchMarkerURL) else { return nil }
+        return launchAndWaitForPort(portFileURL: portFileURL, timeout: launchTimeout, appName: appName)
     }
 
     public static func postPrompt(
@@ -80,15 +85,33 @@ public enum NudgeClient {
         return result == 0
     }
 
-    private static func launchAndWaitForPort(portFileURL: URL, timeout: TimeInterval) -> UInt16? {
+    private static func launchAndWaitForPort(
+        portFileURL: URL,
+        timeout: TimeInterval,
+        appName: String
+    ) -> UInt16? {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        p.arguments = ["-ga", "Nudge"]
+        p.arguments = ["-ga", appName]
+        // Discard `open`'s "Unable to find application named 'Nudge'" so an
+        // uninstalled bundle doesn't spray stderr into Claude's hook log on
+        // every tool call.
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
         do {
             try p.run()
         } catch {
             return nil
         }
+        // `open -g` returns as soon as LaunchServices accepts the request, so
+        // this wait is short — and its exit status is the authoritative answer
+        // to "does this app exist anywhere?", which beats guessing a path.
+        // Without the check, an uninstalled Nudge cost the full timeout on
+        // every hook: Pre+Post on each tool call, with nothing on screen to
+        // explain the lag.
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if let port = readPort(from: portFileURL), probe(port: port) {

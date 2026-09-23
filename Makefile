@@ -1,4 +1,4 @@
-.PHONY: build clean run install uninstall sync-patterns import-permissions test test-popup
+.PHONY: build clean run install uninstall sync-patterns import-permissions test test-popup previews
 
 CONFIG ?= release
 BUILD_DIR := .build/$(CONFIG)
@@ -75,10 +75,16 @@ test:
 test-popup:
 	./scripts/test-popup.sh "$(CMD)" "$(TOOL)" "$(MODE)"
 
+# Renders every popover state to .build/previews/*.png without touching the
+# running app — quick way to eyeball UI changes or refresh README screenshots.
+previews: build
+	$(BUILD_DIR)/Nudge --render-previews $(BUILD_DIR)/previews
+	@echo "✓ Previews in $(BUILD_DIR)/previews/"
+
 uninstall:
 	-pkill -x Nudge 2>/dev/null || true
 	rm -rf $(APP_DEST)
-	rm -f $(HOME)/.config/nudge/port $(HOME)/.config/nudge/token
+	rm -f $(HOME)/.config/nudge/port $(HOME)/.config/nudge/token $(HOME)/.config/nudge/no-autolaunch
 	@./scripts/link-cli.sh --uninstall
 	./scripts/uninstall-hook.sh
 	@echo "✓ Nudge uninstalled."

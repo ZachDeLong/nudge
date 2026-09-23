@@ -21,13 +21,16 @@ final class MenuBarController: NSObject {
     private let statusItem: NSStatusItem
     private let panel: PromptPanel
     private let sessionAllow = SessionAllowList()
-    private var currentPrompt: Prompt?
-    private var queueDepth: Int = 0
-    private var pulseTimer: Timer?
+    private let store = PromptStore()
+    private var currentPrompt: Prompt? { store.prompt }
+    private var queueDepth: Int { store.queueDepth }
+    private var noticeTask: Task<Void, Never>?
+    private var deferredHead: (prompt: Prompt?, depth: Int)?
     private var agentRefreshTimer: Timer?
     private var agentRefreshSequence: Int = 0
     private var keyMonitor: Any?
     private var clickMonitor: Any?
+    private var idleKeyMonitor: Any?
     private var settings: Prefs = .load()
     private let agentChat = AgentChatStore()
 
@@ -37,6 +40,7 @@ final class MenuBarController: NSObject {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.panel = PromptPanel()
         super.init()
+        store.prefs = settings
         configureStatusItem()
         Task { await self.subscribeToQueue() }
     }
@@ -52,8 +56,14 @@ final class MenuBarController: NSObject {
         refreshIcon()
     }
 
+    private var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
     /// Updates the menu bar icon based on enabled state and current prompt.
-    private func refreshIcon() {
+    /// `arrived` = a new prompt just landed: bounce the glyph so the eye goes
+    /// to the menu bar even from another app.
+    private func refreshIcon(arrived: Bool = false) {
         guard let button = statusItem.button else { return }
         let symbol: String
         let color: NSColor?  // nil = adaptive (template), non-nil = baked color
@@ -73,6 +83,15 @@ final class MenuBarController: NSObject {
             return
         }
 
+        // Crossfade the glyph swap (outline ↔ filled red) instead of snapping.
+        if !reduceMotion, button.image != nil {
+            button.wantsLayer = true
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = 0.18
+            button.layer?.add(fade, forKey: "glyph")
+        }
+
         if let color = color {
             // Bake the color into the SF Symbol via hierarchicalColor. Status
             // bar buttons sometimes ignore `contentTintColor`, so applying the
@@ -88,6 +107,46 @@ final class MenuBarController: NSObject {
             button.image = baseImg
             button.contentTintColor = nil
         }
+
+        // A single pending prompt is the red icon. Two or more get a count
+        // beside it, so a backlog is visible without opening the popover.
+        if settings.enabled, currentPrompt != nil, queueDepth > 1 {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: NSColor.systemRed,
+                .baselineOffset: 0.5,
+            ]
+            button.attributedTitle = NSAttributedString(string: " \(queueDepth)", attributes: attrs)
+            button.imagePosition = .imageLeading
+        } else {
+            button.attributedTitle = NSAttributedString(string: "")
+            button.imagePosition = .imageOnly
+        }
+
+        if arrived { bounceIcon() }
+    }
+
+    /// A short scale bounce on the status item when a prompt lands — the
+    /// literal nudge. Scales about the centre by composing translations into
+    /// the transform, so AppKit's ownership of the layer's anchorPoint and
+    /// position is left alone.
+    private func bounceIcon() {
+        guard !reduceMotion, let button = statusItem.button else { return }
+        button.wantsLayer = true
+        guard let layer = button.layer else { return }
+        let b = layer.bounds
+        func scaled(_ s: CGFloat) -> NSValue {
+            var t = CATransform3DMakeTranslation(b.midX, b.midY, 0)
+            t = CATransform3DScale(t, s, s, 1)
+            t = CATransform3DTranslate(t, -b.midX, -b.midY, 0)
+            return NSValue(caTransform3D: t)
+        }
+        let bounce = CAKeyframeAnimation(keyPath: "transform")
+        bounce.values = [1.0, 1.3, 0.92, 1.06, 1.0].map(scaled)
+        bounce.keyTimes = [0, 0.3, 0.6, 0.82, 1]
+        bounce.duration = 0.45
+        bounce.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 4)
+        layer.add(bounce, forKey: "bounce")
     }
 
     @objc private func handleClick(_ sender: AnyObject?) {
@@ -160,23 +219,30 @@ final class MenuBarController: NSObject {
     private func togglePauseAndRefresh() {
         settings.enabled.toggle()
         settings.save()
+        // The store drives the idle UI, so the switch and subtitle animate in
+        // place — no re-show, no replayed drop-in.
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+            store.prefs = settings
+        }
         refreshIcon()
         // If Nudge was paused while a prompt was up, resolve it so callers
         // unblock instead of waiting on a popover that won't appear.
         if !settings.enabled, currentPrompt != nil {
             resolve(currentPrompt?.resolvedKind == .ask ? .cancel : .deny)
         }
-        // Re-render the popover so the idle UI reflects the new state.
         if panel.isVisible, currentPrompt == nil {
-            renderAndShow()
+            animatedRefit()
         }
     }
 
     private func toggleSkipTerminalAndRefresh() {
         settings.skipWhenTerminalFocused.toggle()
         settings.save()
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+            store.prefs = settings
+        }
         if panel.isVisible, currentPrompt == nil {
-            renderAndShow()
+            animatedRefit()
         }
     }
 
@@ -186,9 +252,7 @@ final class MenuBarController: NSObject {
 
     private func buildPopoverView() -> PopoverView {
         PopoverView(
-            prompt: currentPrompt,
-            queueDepth: queueDepth,
-            prefs: settings,
+            state: store,
             onAllow: { [weak self] in self?.resolve(.allow) },
             onDeny:  { [weak self] in self?.resolve(.deny) },
             onAlwaysAllow: { [weak self] in self?.alwaysAllowCurrent() },
@@ -233,15 +297,25 @@ final class MenuBarController: NSObject {
     }
 
     private func renderAndShow() {
+        // Permission popovers stay non-key (see KeyablePanel). Asks need key
+        // for the text field; idle takes key too so its switches, the chat
+        // composer and Esc-to-close all behave like a real menu bar extra.
         let isAsk = currentPrompt?.resolvedKind == .ask
-        let hasChat = currentPrompt == nil && agentChat.detail != nil
+        let isIdle = currentPrompt == nil
         panel.show(
             content: buildPopoverView(),
             anchorTo: statusItem.button,
-            makeKey: isAsk || hasChat
+            makeKey: isAsk || isIdle
         )
+        // Menu bar extras show their icon pressed while their panel is open.
+        statusItem.button?.highlight(true)
         // Click-outside dismiss applies to every visible state of the panel.
         startClickMonitor()
+        if isIdle {
+            startIdleKeyMonitor()
+        } else {
+            stopIdleKeyMonitor()
+        }
         // Pulse the menu bar icon only while the popover is open with an
         // active permission prompt. Once dismissed, the icon stays red and
         // steady (refreshIcon) so it's still a clear "pending" indicator.
@@ -264,8 +338,10 @@ final class MenuBarController: NSObject {
 
     private func dismissPanel() {
         stopClickMonitor()
+        stopIdleKeyMonitor()
         stopPulse()
         stopAgentRefresh()
+        statusItem.button?.highlight(false)
         panel.hide()
     }
 
@@ -295,14 +371,30 @@ final class MenuBarController: NSObject {
         // Auto-resolve via session allow list before any UI (permission only).
         if let prompt = prompt,
            prompt.resolvedKind == .permission,
-           sessionAllow.contains(command: prompt.command) {
-            Task { await queue.resolveHead(with: .allow) }
+           sessionAllow.contains(tool: prompt.tool, command: prompt.command) {
+            Task { await queue.resolve(id: prompt.id, with: .allow) }
             return
         }
 
-        self.currentPrompt = prompt
-        self.queueDepth = depth
-        refreshIcon()
+        // A decision notice is on screen: hold the next state until it has
+        // had its beat. Only the latest head matters when it ends.
+        if store.notice != nil {
+            deferredHead = (prompt, depth)
+            return
+        }
+        applyHead(prompt: prompt, depth: depth)
+    }
+
+    private func applyHead(prompt: Prompt?, depth: Int) {
+        let wasVisible = panel.isVisible
+        let previousID = store.prompt?.id
+        // Visible panel: cross-fade to the new content in place. Hidden: no
+        // animation on the state — the drop-in in show() is the entrance.
+        withAnimation((wasVisible && !reduceMotion) ? .easeInOut(duration: 0.22) : nil) {
+            store.prompt = prompt
+            store.queueDepth = depth
+        }
+        refreshIcon(arrived: prompt != nil && prompt?.id != previousID)
 
         if let prompt = prompt {
             // Global Enter/Esc shortcuts only make sense for permission
@@ -313,33 +405,106 @@ final class MenuBarController: NSObject {
             } else {
                 stopKeyMonitor()
             }
-            // Pulse is now driven by popover visibility, not prompt presence
-            // — see renderAndShow / dismissPanel.
-            renderAndShow()
+            if wasVisible {
+                refreshVisiblePanel()
+            } else {
+                renderAndShow()
+            }
         } else {
             stopKeyMonitor()
             dismissPanel()
         }
     }
 
+    /// Same bookkeeping as renderAndShow, for a panel that is already up: the
+    /// content changed under it (next prompt, a toggle), so re-key, refit with
+    /// animation, and re-arm the pulse / refresh timers for the new state.
+    private func refreshVisiblePanel() {
+        let isAsk = currentPrompt?.resolvedKind == .ask
+        let isIdle = currentPrompt == nil
+        panel.setKeyable(isAsk || isIdle)
+        animatedRefit()
+        if currentPrompt?.resolvedKind == .permission { startPulse() } else { stopPulse() }
+        if isIdle {
+            startAgentRefresh()
+            startIdleKeyMonitor()
+        } else {
+            stopAgentRefresh()
+            stopIdleKeyMonitor()
+        }
+    }
+
+    /// SwiftUI commits the new layout on the next runloop turn, so measure
+    /// then. The second pass after the cross-fade catches the case where the
+    /// outgoing view was taller than the incoming one — the ZStack holds both
+    /// until the removal transition ends.
+    private func animatedRefit() {
+        let makeKey = currentPrompt == nil || currentPrompt?.resolvedKind == .ask
+        DispatchQueue.main.async { [weak self] in self?.refitNow(makeKey: makeKey) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.refitNow(makeKey: makeKey) }
+    }
+
+    private func refitNow(makeKey: Bool) {
+        guard panel.isVisible else { return }
+        panel.refit(anchorTo: statusItem.button, makeKey: makeKey, animated: true)
+    }
+
     // MARK: - Decision handlers
 
+    /// Resolves the prompt currently on screen. The id is read here on the main
+    /// actor and carried into the task, so a queue that moves on between the
+    /// click and the hop can't redirect this decision at another prompt.
+    /// While a notice is showing the decision has already gone out, so a
+    /// second Enter or click is dropped rather than re-sent.
     private func resolve(_ decision: Decision) {
-        Task { await queue.resolveHead(with: decision) }
+        guard store.notice == nil, let prompt = currentPrompt else { return }
+        let id = prompt.id
+        Task { await queue.resolve(id: id, with: decision) }
+        if prompt.resolvedKind == .permission {
+            showNotice(decision == .allow ? .allowed : .denied)
+        }
     }
 
     private func submitAskText(_ text: String) {
+        guard store.notice == nil, let id = currentPrompt?.id else { return }
         let response = DecisionResponse(decision: .text, text: text)
-        Task { await queue.resolveHead(with: response) }
+        Task { await queue.resolve(id: id, with: response) }
+        showNotice(.sent)
+    }
+
+    /// Holds the panel for a beat with the decision acknowledged in place of
+    /// the buttons, so the click visibly landed. The hook is already unblocked
+    /// — only the UI lingers. Whatever the queue moved to (next prompt or
+    /// empty) is applied when the beat ends.
+    private func showNotice(_ notice: DecisionNotice) {
+        guard panel.isVisible else { return }
+        stopKeyMonitor()
+        stopPulse()
+        withAnimation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0.25)) {
+            store.notice = notice
+        }
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 520_000_000)
+            guard !Task.isCancelled else { return }
+            self?.endNotice()
+        }
+    }
+
+    private func endNotice() {
+        noticeTask = nil
+        store.notice = nil
+        if let next = deferredHead {
+            deferredHead = nil
+            applyHead(prompt: next.prompt, depth: next.depth)
+        }
     }
 
     private func alwaysAllowCurrent() {
         guard let prompt = currentPrompt else { return }
-        // Prefer the matched pattern (e.g. `Bash(git push:*)`) so Claude auto-
-        // allows the whole class of commands going forward, not just this exact
-        // string. Fall back to `Bash(<exact>)` if no matched pattern was sent
-        // (older hook builds, or direct test-popup posts without one).
-        let rule = translatePromotion(prompt.matchedPattern ?? "Bash(\(prompt.command))")
+        // The rule text is shared with the popover's menu label (Promotion),
+        // so what the user clicked is exactly what lands in settings.json.
+        let rule = Promotion.rule(for: prompt)
         do {
             _ = try PersistentAllowList.addRule(rule)
         } catch {
@@ -347,42 +512,37 @@ final class MenuBarController: NSObject {
         }
         // Also session-allow this exact command so it doesn't re-prompt within
         // the same Claude Code session (Claude caches settings.json at start).
-        sessionAllow.add(command: prompt.command)
+        sessionAllow.add(tool: prompt.tool, command: prompt.command)
         resolve(.allow)
-    }
-
-    /// Most patterns are written verbatim to Claude Code's `permissions.allow`
-    /// because Claude Code understands them natively (e.g. `Bash(git push:*)`,
-    /// `Edit(/etc/**)`). MCP is the exception: nudge uses an `Mcp(server__tool)`
-    /// wrapper for consistency, but Claude Code's permissions format wants the
-    /// bare `mcp__server__tool` form. Translate on promotion.
-    private func translatePromotion(_ rule: String) -> String {
-        guard rule.hasPrefix("Mcp("), rule.hasSuffix(")") else { return rule }
-        let inner = String(rule.dropFirst(4).dropLast())
-        return "mcp__\(inner)"
     }
 
     private func sessionAllowCurrent() {
         guard let prompt = currentPrompt else { return }
-        sessionAllow.add(command: prompt.command)
+        sessionAllow.add(tool: prompt.tool, command: prompt.command)
         resolve(.allow)
     }
 
     // MARK: - Pulse
 
+    /// Breathing opacity on the status item while the panel is up with a
+    /// permission prompt. Core Animation runs it off the main thread, so it
+    /// costs nothing per frame; with Reduce Motion the icon stays steady red.
     private func startPulse() {
         stopPulse()
-        pulseTimer = Timer.scheduledTimer(withTimeInterval: 0.025, repeats: true) { [weak self] _ in
-            guard let button = self?.statusItem.button else { return }
-            let now = Date().timeIntervalSinceReferenceDate
-            let phase = (sin(now * 4.2) + 1) / 2
-            button.alphaValue = 0.55 + phase * 0.45
-        }
+        guard !reduceMotion, let button = statusItem.button else { return }
+        button.wantsLayer = true
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 1.0
+        pulse.toValue = 0.5
+        pulse.duration = 0.75
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        button.layer?.add(pulse, forKey: "pulse")
     }
 
     private func stopPulse() {
-        pulseTimer?.invalidate()
-        pulseTimer = nil
+        statusItem.button?.layer?.removeAnimation(forKey: "pulse")
         statusItem.button?.alphaValue = 1.0
     }
 
@@ -402,6 +562,22 @@ final class MenuBarController: NSObject {
 
     private func stopKeyMonitor() {
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
+    }
+
+    // MARK: - Esc closes the idle popover
+
+    private func startIdleKeyMonitor() {
+        stopIdleKeyMonitor()
+        idleKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.panel.isVisible, self.panel.isKey,
+                  self.currentPrompt == nil, event.keyCode == 53 else { return event }
+            DispatchQueue.main.async { self.dismissPanel() }
+            return nil
+        }
+    }
+
+    private func stopIdleKeyMonitor() {
+        if let m = idleKeyMonitor { NSEvent.removeMonitor(m); idleKeyMonitor = nil }
     }
 
     // MARK: - Click-outside-to-deny
@@ -490,7 +666,7 @@ final class MenuBarController: NSObject {
         guard panel.isVisible, currentPrompt == nil else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, self.panel.isVisible, self.currentPrompt == nil else { return }
-            self.panel.refit(anchorTo: self.statusItem.button, makeKey: self.agentChat.detail != nil)
+            self.panel.refit(anchorTo: self.statusItem.button, makeKey: true, animated: true)
         }
     }
 
@@ -543,7 +719,13 @@ final class PromptPanel {
     private let hosting: NSHostingController<AnyView>
 
     var isVisible: Bool { panel.isVisible }
+    var isKey: Bool { panel.isKeyWindow }
     var windowFrame: NSRect { panel.frame }
+
+    /// System-wide "Reduce motion" — swap the slide+overshoot for a plain fade.
+    private var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
     init() {
         self.hosting = NSHostingController(rootView: AnyView(EmptyView()))
@@ -571,33 +753,44 @@ final class PromptPanel {
     /// the real height comes from `hosting.view.fittingSize` in show().
     private static let fallbackContentSize = NSSize(width: 420, height: 200)
 
-    /// Swaps the SwiftUI root view without re-running positioning or the
-    /// drop-in animation. Used when the popover content changes mid-display
-    /// (e.g., chat-mirror auto-refresh) so the panel doesn't re-animate.
-    func updateContent(_ content: PopoverView) {
-        guard panel.isVisible else { return }
-        hosting.rootView = AnyView(
-            content
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        )
-        refit(anchorTo: nil, makeKey: (panel as? KeyablePanel)?.allowsKey ?? false)
+    /// Flips key-window eligibility for content that changed under a visible
+    /// panel. Does not resign key — AppKit has no clean way to, and a panel
+    /// that stays key until it hides is what happened before as well.
+    func setKeyable(_ flag: Bool) {
+        (panel as? KeyablePanel)?.allowsKey = flag
     }
 
     /// Re-measures SwiftUI content after ObservableObject changes. This keeps
     /// async chat-detail loads from being clipped by the shorter placeholder
-    /// panel that was measured before tmux capture finished.
-    func refit(anchorTo button: NSStatusBarButton?, makeKey: Bool = false) {
+    /// panel that was measured before tmux capture finished. `animated` eases
+    /// the frame to the new size in step with the content's own transition.
+    func refit(anchorTo button: NSStatusBarButton?, makeKey: Bool = false, animated: Bool = false) {
         guard panel.isVisible else { return }
         if let keyable = panel as? KeyablePanel {
             keyable.allowsKey = makeKey
         }
 
         hosting.view.layoutSubtreeIfNeeded()
-        panel.setContentSize(fittingContentSize())
-        if let button {
-            panel.setFrameOrigin(computeOrigin(anchorTo: button))
+        let newSize = fittingContentSize()
+        if let button, let newOrigin = originUnder(button: button, size: newSize) {
+            // Atomic: avoid the gap-flicker that comes from setContentSize
+            // (which keeps top-left fixed and drops origin.y) followed by
+            // setFrameOrigin a moment later.
+            let target = NSRect(origin: newOrigin, size: newSize)
+            if animated, !reduceMotion, target != panel.frame {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.22
+                    ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    panel.animator().setFrame(target, display: true)
+                }
+            } else {
+                panel.setFrame(target, display: true, animate: false)
+            }
+        } else {
+            panel.setContentSize(newSize)
         }
-        if makeKey, !panel.isKeyWindow {
+        if makeKey, !panel.isKeyWindow,
+           !NSApp.windows.contains(where: { $0.isKeyWindow }) {
             panel.makeKey()
         }
     }
@@ -605,7 +798,7 @@ final class PromptPanel {
     func show(content: PopoverView, anchorTo button: NSStatusBarButton?, makeKey: Bool = false) {
         hosting.rootView = AnyView(
             content
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: PopoverView.cornerRadius, style: .continuous))
         )
 
         // Ask SwiftUI for the actual intrinsic size after layout. Using
@@ -620,9 +813,11 @@ final class PromptPanel {
 
         // Drop-in: start 12px above the resting position and 0 alpha, then
         // snap into place with a back-out (light overshoot). Kept short so the
-        // animation stays clear of the menu bar region throughout.
+        // animation stays clear of the menu bar region throughout. With Reduce
+        // Motion on, it is a fade in place.
+        let reduceMotion = self.reduceMotion
         var startOrigin = finalOrigin
-        startOrigin.y += 12
+        if !reduceMotion { startOrigin.y += 12 }
         panel.alphaValue = 0
         panel.setFrameOrigin(startOrigin)
         // Gate key-window eligibility BEFORE ordering front. Permission
@@ -638,9 +833,14 @@ final class PromptPanel {
         }
 
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.26
-            // Ease-out-back: slight overshoot at the end for a "drop" feel.
-            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.56, 0.64, 1.0)
+            if reduceMotion {
+                ctx.duration = 0.12
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            } else {
+                ctx.duration = 0.26
+                // Ease-out-back: slight overshoot at the end for a "drop" feel.
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.56, 0.64, 1.0)
+            }
             panel.animator().alphaValue = 1
             panel.animator().setFrameOrigin(finalOrigin)
         })
@@ -657,11 +857,12 @@ final class PromptPanel {
 
     func hide() {
         guard panel.isVisible else { return }
+        let reduceMotion = self.reduceMotion
         let currentOrigin = panel.frame.origin
         var endOrigin = currentOrigin
-        endOrigin.y += 14
+        if !reduceMotion { endOrigin.y += 14 }
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.14
+            ctx.duration = reduceMotion ? 0.1 : 0.14
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
             panel.animator().setFrameOrigin(endOrigin)
@@ -679,6 +880,15 @@ final class PromptPanel {
     }
 
     private func originUnder(button: NSStatusBarButton?) -> NSPoint? {
+        return originUnder(button: button, size: panel.frame.size)
+    }
+
+    /// Variant that takes the target size explicitly. Call this before mutating
+    /// the panel size so origin and size apply atomically — `setContentSize`
+    /// followed by `setFrameOrigin` leaves a brief window where the panel has
+    /// the new height but the old origin, which on the agent chat panel was
+    /// large enough to push the top below the menu bar before snapping back.
+    private func originUnder(button: NSStatusBarButton?, size: NSSize) -> NSPoint? {
         guard let button = button,
               let buttonWindow = button.window else { return nil }
         let buttonFrame = buttonWindow.frame
@@ -686,7 +896,6 @@ final class PromptPanel {
         guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(buttonFrame) })
               ?? NSScreen.main else { return nil }
 
-        let size = panel.frame.size
         let buttonCenterX = buttonFrame.midX
         var originX = buttonCenterX - size.width / 2
 

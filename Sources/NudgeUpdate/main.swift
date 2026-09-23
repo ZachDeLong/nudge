@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NudgeCore
 
@@ -8,6 +9,13 @@ import NudgeCore
 //   nudge-update              # print current vs latest, exit 0
 //   nudge-update --check      # exit 0 if up-to-date, 1 if an update exists
 //   nudge-update --apply      # download + replace /Applications/Nudge.app
+//   nudge-update --apply --no-verify   # skip the checksum check (see below)
+//
+// The build is unsigned, so there's no Gatekeeper check standing between a bad
+// download and /Applications. The release workflow publishes Nudge.app.zip.sha256
+// alongside the zip and --apply refuses to swap unless the bytes match. That's
+// not a substitute for notarization — it's a tripwire for a truncated download
+// or a tampered asset, and it's what's available until there's a Developer ID.
 //
 // This is the v1 of the updater; eventually replaced by Sparkle.
 
@@ -18,8 +26,15 @@ let assetName = "Nudge.app.zip"
 let args = Array(CommandLine.arguments.dropFirst())
 let checkOnly = args.contains("--check")
 let apply = args.contains("--apply")
+let skipVerify = args.contains("--no-verify")
 
-func eprint(_ s: String) { FileHandle.standardError.write(Data((s + "\n").utf8)) }
+/// Flushes stdout first — otherwise buffered `print` output lands after the
+/// unbuffered stderr write, and the transcript reads out of order (an error
+/// appearing above the step that caused it).
+func eprint(_ s: String) {
+    fflush(stdout)
+    FileHandle.standardError.write(Data((s + "\n").utf8))
+}
 
 // MARK: - Read installed version
 
@@ -81,6 +96,25 @@ guard let assetURL = release.assetURL else {
     exit(2)
 }
 
+// Settle whether this download is verifiable before spending the bandwidth —
+// no point pulling several MB only to refuse to install it.
+var checksumURL: URL? = nil
+if skipVerify {
+    print("⚠︎ Skipping checksum verification (--no-verify).")
+} else {
+    guard let url = release.checksumURL else {
+        eprint("""
+        nudge-update: release \(latest) has no \(assetName).sha256 asset, so the \
+        download can't be verified.
+          Refusing to replace \(appPath) with unverified bytes.
+          Re-run with --no-verify to override, or install manually from:
+          \(assetURL.absoluteString)
+        """)
+        exit(2)
+    }
+    checksumURL = url
+}
+
 print("Downloading \(assetURL.lastPathComponent)…")
 
 let stagingDir = FileManager.default.temporaryDirectory
@@ -92,7 +126,37 @@ let zipURL = stagingDir.appendingPathComponent(assetName)
 let downloadOK = downloadSync(assetURL, to: zipURL)
 guard downloadOK else {
     eprint("nudge-update: download failed.")
+    try? FileManager.default.removeItem(at: stagingDir)
     exit(2)
+}
+
+// MARK: - Verify
+
+if let checksumURL {
+    print("Verifying checksum…")
+    let sumFile = stagingDir.appendingPathComponent(assetName + ".sha256")
+    guard downloadSync(checksumURL, to: sumFile),
+          let expected = Checksum.readExpected(from: sumFile) else {
+        eprint("nudge-update: couldn't fetch or parse \(assetName).sha256.")
+        try? FileManager.default.removeItem(at: stagingDir)
+        exit(2)
+    }
+    guard let actual = Checksum.sha256Hex(of: zipURL) else {
+        eprint("nudge-update: couldn't hash the downloaded zip.")
+        try? FileManager.default.removeItem(at: stagingDir)
+        exit(2)
+    }
+    guard actual == expected else {
+        eprint("""
+        nudge-update: CHECKSUM MISMATCH — refusing to install.
+          expected: \(expected)
+          actual:   \(actual)
+        The download was corrupted or tampered with. Nothing has been changed.
+        """)
+        try? FileManager.default.removeItem(at: stagingDir)
+        exit(2)
+    }
+    print("  ✓ sha256 \(actual.prefix(16))…")
 }
 
 print("Unzipping…")

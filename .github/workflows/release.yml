@@ -57,7 +57,16 @@ jobs:
           cd .build/release
           zip -ry Nudge.app.zip Nudge.app
 
-      - name: Create release and upload asset
+      # `nudge-update --apply` refuses to swap /Applications/Nudge.app unless
+      # the download matches this digest. The build is unsigned, so this is the
+      # only integrity check standing between a bad asset and the user's Mac.
+      - name: Checksum app bundle
+        run: |
+          cd .build/release
+          shasum -a 256 Nudge.app.zip > Nudge.app.zip.sha256
+          cat Nudge.app.zip.sha256
+
+      - name: Create release and upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -66,8 +75,10 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "$TAG" \
             --generate-notes \
-            .build/release/Nudge.app.zip || \
+            .build/release/Nudge.app.zip \
+            .build/release/Nudge.app.zip.sha256 || \
           gh release upload "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber \
-            .build/release/Nudge.app.zip
+            .build/release/Nudge.app.zip \
+            .build/release/Nudge.app.zip.sha256

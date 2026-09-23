@@ -124,6 +124,49 @@ expect(
     "split: trims CRLF"
 )
 
+// MARK: splitBashCommand — newlines are separators (regression)
+//
+// Claude Code emits multi-line bash constantly. Before this, the whole block
+// stayed one segment and no prefix/exact pattern could ever match past line 1.
+
+expect(splitBashCommand("ls\nrm -rf foo"), ["ls", "rm -rf foo"], "split: newline separates")
+expect(
+    splitBashCommand("cd /tmp\necho hi\nrm -rf foo"),
+    ["cd /tmp", "echo hi", "rm -rf foo"],
+    "split: multiple newlines"
+)
+expect(splitBashCommand("\n\nls\n\n"), ["ls"], "split: blank lines collapse away")
+expect(
+    splitBashCommand("ls\n&& rm foo"),
+    ["ls", "rm foo"],
+    "split: newline then operator doesn't emit an empty segment"
+)
+expect(
+    splitBashCommand("git push \\\n  --force"),
+    ["git push \\\n  --force"],
+    "split: backslash line continuation stays one segment"
+)
+expect(
+    splitBashCommand("echo \"line1\nline2\" && ls"),
+    ["echo \"line1\nline2\"", "ls"],
+    "split: newline inside double quotes is not a separator"
+)
+expect(
+    splitBashCommand("echo 'line1\nline2'"),
+    ["echo 'line1\nline2'"],
+    "split: newline inside single quotes is not a separator"
+)
+expect(
+    splitBashCommand("echo $(date\nhostname)"),
+    ["echo $(date\nhostname)"],
+    "split: newline inside $(...) is not a separator"
+)
+expect(
+    splitBashCommand("(cd /tmp\nrm -rf foo)"),
+    ["(cd /tmp\nrm -rf foo)"],
+    "split: newline inside a subshell stays wrapped for peeling"
+)
+
 // MARK: bashCandidates — peel subshell/brace wrappers
 
 expect(
@@ -140,6 +183,11 @@ expect(
     bashCandidates(for: "(cd /foo && rm -rf bar)"),
     ["(cd /foo && rm -rf bar)", "cd /foo", "rm -rf bar"],
     "candidates: peels subshell and re-splits inside"
+)
+expect(
+    bashCandidates(for: "(cd /tmp\nrm -rf foo)"),
+    ["(cd /tmp\nrm -rf foo)", "cd /tmp", "rm -rf foo"],
+    "candidates: peels subshell and splits its newlines"
 )
 
 // MARK: parsePattern — tighter validation
@@ -165,6 +213,23 @@ expect(hasTokenPrefix("rmadison ubuntu", prefix: "rm"), false, "tokenprefix: rma
 expect(hasTokenPrefix("git push", prefix: "git push"), true, "tokenprefix: multi-word exact")
 expect(hasTokenPrefix("git push origin main", prefix: "git push"), true, "tokenprefix: multi-word prefix + space")
 expect(hasTokenPrefix("git pushd", prefix: "git push"), false, "tokenprefix: git pushd is not git push")
+
+// MARK: collapseWhitespace + spacing tolerance (regression)
+//
+// `git  push --force` used to slip past `Bash(git push:*)` because the prefix
+// compare was byte-exact on the space run.
+
+expect(collapseWhitespace("  git   push  "), "git push", "collapse: trims and collapses runs")
+expect(collapseWhitespace("git\t\tpush"), "git push", "collapse: tabs become one space")
+expect(collapseWhitespace("git push"), "git push", "collapse: already-normal is unchanged")
+expect(collapseWhitespace("   "), "", "collapse: whitespace-only becomes empty")
+
+expect(hasTokenPrefix("git  push origin", prefix: "git push"), true, "tokenprefix: double space in segment")
+expect(hasTokenPrefix("git\tpush origin", prefix: "git push"), true, "tokenprefix: tab in segment")
+expect(hasTokenPrefix("git push origin", prefix: "git  push"), true, "tokenprefix: double space in pattern")
+expect(hasTokenPrefix("git  pushd", prefix: "git push"), false, "tokenprefix: spacing tolerance doesn't loosen the boundary")
+expect(hasTokenPrefix("rm -rf foo", prefix: ""), false, "tokenprefix: empty prefix never matches")
+expect(hasTokenPrefix("rm -rf foo", prefix: "   "), false, "tokenprefix: whitespace-only prefix never matches")
 
 // MARK: matchedPattern — baseline (existing behavior preserved)
 
@@ -234,6 +299,74 @@ expect(
     matchedPattern(toolName: "Bash", target: "(cd /foo && rm -rf bar) && deploy", patterns: patterns),
     "Bash(*deploy*)",
     "match: subshell + infix deploy — infix still wins on full string"
+)
+
+// MARK: matchedPattern — multi-line evasion (regression)
+
+expect(
+    matchedPattern(toolName: "Bash", target: "ls\nrm -rf /tmp/foo", patterns: patterns),
+    "Bash(rm:*)",
+    "match: newline-separated rm caught"
+)
+expect(
+    matchedPattern(toolName: "Bash", target: "cd /tmp\necho hi\nrm -rf foo", patterns: patterns),
+    "Bash(rm:*)",
+    "match: rm on the third line caught"
+)
+expect(
+    matchedPattern(toolName: "Bash", target: "cd /repo\ngit push origin main", patterns: patterns),
+    "Bash(git push:*)",
+    "match: newline-separated git push caught"
+)
+expect(
+    matchedPattern(toolName: "Bash", target: "(cd /tmp\nrm -rf foo)", patterns: patterns),
+    "Bash(rm:*)",
+    "match: newline inside a subshell still peels to rm"
+)
+expect(
+    matchedPattern(toolName: "Bash", target: "git push \\\n  --force origin", patterns: patterns),
+    "Bash(*--force*)",
+    "match: line continuation keeps the command whole, infix still wins"
+)
+// Heredoc bodies get split too. That's the deliberate trade: an extra prompt
+// when a script *containing* `rm -rf` is written out, never a missed one.
+expect(
+    matchedPattern(toolName: "Bash", target: "cat <<EOF > /tmp/s.sh\nrm -rf /tmp/foo\nEOF", patterns: patterns),
+    "Bash(rm:*)",
+    "match: heredoc body errs toward prompting"
+)
+// A quoted newline is still just text — no phantom segment, no false prompt.
+expectNil(
+    matchedPattern(toolName: "Bash", target: "echo 'safe\nrm -rf foo'", patterns: patterns),
+    "match: rm inside a single-quoted multi-line string doesn't fire"
+)
+
+// MARK: matchedPattern — spacing tolerance (regression)
+
+expect(
+    matchedPattern(toolName: "Bash", target: "git  push origin main", patterns: patterns),
+    "Bash(git push:*)",
+    "match: double space between git and push"
+)
+expect(
+    matchedPattern(toolName: "Bash", target: "git\tpush origin main", patterns: patterns),
+    "Bash(git push:*)",
+    "match: tab between git and push"
+)
+expect(
+    matchedPattern(toolName: "Bash", target: "ls &&    rm   -rf foo", patterns: patterns),
+    "Bash(rm:*)",
+    "match: padded chain segment"
+)
+expect(
+    matchedPattern(toolName: "Bash", target: "git  pushd /tmp", patterns: ["Bash(git push:*)"]),
+    nil,
+    "match: spacing tolerance doesn't turn pushd into push"
+)
+expect(
+    matchedPattern(toolName: "Bash", target: "git  push", patterns: ["Bash(git push)"]),
+    "Bash(git push)",
+    "match: exact pattern tolerates spacing too"
 )
 
 // MARK: matchedPattern — infix normalization (the BLOCKER)
@@ -486,6 +619,237 @@ do {
     } catch {
         failures.append("✗ token: read on world-readable file threw \(error), expected .permsTooBroad")
     }
+}
+
+// MARK: AutoLaunch — Quit means quit (regression)
+//
+// The agent hook fires on every tool call, so without the marker a deliberate
+// Quit was undone by `open -ga Nudge` within milliseconds.
+
+func tempMarkerURL() -> URL {
+    URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("nudge-autolaunch-\(UUID().uuidString)")
+}
+
+do {
+    let url = tempMarkerURL()
+    defer { try? FileManager.default.removeItem(at: url) }
+    expect(AutoLaunch.isSuppressed(at: url), false, "autolaunch: absent marker means allowed")
+    AutoLaunch.suppress(at: url)
+    expect(AutoLaunch.isSuppressed(at: url), true, "autolaunch: suppress writes the marker")
+    AutoLaunch.allow(at: url)
+    expect(AutoLaunch.isSuppressed(at: url), false, "autolaunch: allow clears the marker")
+}
+
+do {
+    // suppress/allow are called on every quit and launch — they must not throw
+    // or accumulate state when repeated.
+    let url = tempMarkerURL()
+    defer { try? FileManager.default.removeItem(at: url) }
+    AutoLaunch.allow(at: url)
+    AutoLaunch.allow(at: url)
+    expect(AutoLaunch.isSuppressed(at: url), false, "autolaunch: allow is idempotent")
+    AutoLaunch.suppress(at: url)
+    AutoLaunch.suppress(at: url)
+    expect(AutoLaunch.isSuppressed(at: url), true, "autolaunch: suppress is idempotent")
+}
+
+do {
+    // The real payoff: with the marker set and no reachable Nudge, locatePort
+    // must decline instead of spawning `open` and stalling for launchTimeout.
+    let marker = tempMarkerURL()
+    let missingPort = tempMarkerURL()
+    defer { try? FileManager.default.removeItem(at: marker) }
+    AutoLaunch.suppress(at: marker)
+
+    let started = Date()
+    let port = NudgeClient.locatePort(
+        portFileURL: missingPort,
+        launchTimeout: 2.0,
+        autoLaunchMarkerURL: marker
+    )
+    let elapsed = Date().timeIntervalSince(started)
+
+    expectNil(port, "autolaunch: locatePort declines while suppressed")
+    if elapsed < 0.5 {
+        passed += 1
+    } else {
+        failures.append("✗ autolaunch: locatePort stalled \(elapsed)s — it tried to launch anyway")
+    }
+}
+
+// MARK: NudgeClient — missing bundle fails fast (regression)
+//
+// `open -ga <app>` exits non-zero when the app isn't installed. Ignoring that
+// meant an uninstalled Nudge cost the full launchTimeout on every hook call.
+
+do {
+    let missingPort = tempMarkerURL()
+    let absentMarker = tempMarkerURL()
+
+    let started = Date()
+    let port = NudgeClient.locatePort(
+        portFileURL: missingPort,
+        launchTimeout: 5.0,
+        autoLaunchMarkerURL: absentMarker,
+        appName: "NudgeDefinitelyNotInstalled"
+    )
+    let elapsed = Date().timeIntervalSince(started)
+
+    expectNil(port, "locate: unknown app yields no port")
+    if elapsed < 1.0 {
+        passed += 1
+    } else {
+        failures.append("✗ locate: waited \(elapsed)s for a missing app — should bail on open's exit status")
+    }
+}
+
+// MARK: PromptQueue — decisions are matched to a prompt id (regression)
+//
+// resolveHead popped whatever was first, so a head that expired between render
+// and click handed your Allow to the next prompt — approving something you
+// never read.
+
+func makePrompt(_ id: String, command: String) -> Prompt {
+    Prompt(
+        id: id,
+        tool: "Bash",
+        command: command,
+        cwd: "/tmp",
+        sessionId: "test",
+        permissionMode: "default",
+        matchedPattern: "Bash(rm:*)"
+    )
+}
+
+do {
+    let queue = PromptQueue()
+    let head = makePrompt("prompt-A", command: "rm -rf /tmp/a")
+
+    let caller = Task { try await queue.enqueue(head) }
+    try await Task.sleep(nanoseconds: 150_000_000)
+
+    let stale = await queue.resolve(id: "prompt-STALE", with: .allow)
+    expect(stale, false, "queue: a decision carrying a stale id is dropped")
+
+    let matched = await queue.resolve(id: "prompt-A", with: .deny)
+    expect(matched, true, "queue: a decision carrying the head's id lands")
+
+    let got = try await caller.value
+    expect(got.decision, Decision.deny, "queue: caller receives the decision meant for its own prompt")
+}
+
+do {
+    // The actual near-miss: A expires, B becomes head, and a click still in
+    // flight for A must not resolve B.
+    let queue = PromptQueue()
+    let a = makePrompt("A", command: "rm -rf /tmp/a")
+    let b = makePrompt("B", command: "rm -rf /tmp/b")
+
+    let callerA = Task { try? await queue.enqueueWithTimeout(a, seconds: 0.3) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    let callerB = Task { try await queue.enqueue(b) }
+    try await Task.sleep(nanoseconds: 400_000_000)  // A has now timed out; B is head
+
+    let leaked = await queue.resolve(id: "A", with: .allow)
+    expect(leaked, false, "queue: click meant for the expired prompt does not approve its successor")
+
+    _ = await callerA.value
+    let resolvedB = await queue.resolve(id: "B", with: .deny)
+    expect(resolvedB, true, "queue: successor still resolves under its own id")
+    let gotB = try await callerB.value
+    expect(gotB.decision, Decision.deny, "queue: successor got deny, not the leaked allow")
+}
+
+// MARK: AgentActivityStore — pruning uses our clock, not the wire's
+
+func activityEvent(_ name: String, session: String, at date: Date) -> AgentHookEvent {
+    AgentHookEvent(
+        occurredAt: date,
+        nudgeSessionID: session,
+        claudeSessionID: nil,
+        eventName: name,
+        cwd: "/tmp",
+        transcriptPath: nil,
+        permissionMode: nil,
+        toolName: nil,
+        toolSummary: nil,
+        promptPreview: nil,
+        message: nil,
+        error: nil
+    )
+}
+
+do {
+    let store = AgentActivityStore(endedSnapshotTTL: 60, maxSnapshots: 10)
+    let now = Date()
+
+    await store.record(activityEvent("SessionEnd", session: "ended-one", at: now), now: now)
+    // A client whose clock is far ahead (or which is lying) must not age out
+    // everyone else's snapshots.
+    await store.record(
+        activityEvent("Stop", session: "live-one", at: now.addingTimeInterval(86_400)),
+        now: now
+    )
+
+    let snaps = await store.snapshots(now: now)
+    expect(snaps.count, 2, "activity: a future-dated event doesn't evict the ended snapshot")
+}
+
+// MARK: Checksum — the updater's integrity gate
+//
+// nudge-update refuses to swap /Applications/Nudge.app unless the download
+// matches. A parser that accepts junk turns that back into "install anything."
+
+expect(
+    Checksum.parseShasumOutput("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  Nudge.app.zip"),
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "checksum: parses shasum output"
+)
+expect(
+    Checksum.parseShasumOutput("E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855  x.zip"),
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "checksum: case-folds the digest"
+)
+expectNil(Checksum.parseShasumOutput(""), "checksum: rejects empty file")
+expectNil(Checksum.parseShasumOutput("   \n  "), "checksum: rejects whitespace-only file")
+expectNil(Checksum.parseShasumOutput("<!DOCTYPE html><html>404</html>"), "checksum: rejects an HTML error page")
+expectNil(Checksum.parseShasumOutput("e3b0c44298fc1c14  short.zip"), "checksum: rejects a truncated digest")
+expectNil(
+    Checksum.parseShasumOutput("z3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  x.zip"),
+    "checksum: rejects non-hex characters"
+)
+expectNil(
+    Checksum.parseShasumOutput("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8551  x.zip"),
+    "checksum: rejects an over-long digest"
+)
+
+do {
+    // Hash a known value against the published SHA-256 of the empty string, so
+    // the digest is checked against an external constant rather than itself.
+    let url = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("nudge-sum-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: url) }
+    try Data().write(to: url)
+    expect(
+        Checksum.sha256Hex(of: url),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "checksum: sha256 of empty file matches the known constant"
+    )
+
+    try Data("nudge".utf8).write(to: url)
+    let nonEmpty = Checksum.sha256Hex(of: url)
+    expect(nonEmpty?.count, 64, "checksum: digest is 64 hex chars")
+    if nonEmpty != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+        passed += 1
+    } else {
+        failures.append("✗ checksum: content change didn't change the digest")
+    }
+}
+
+do {
+    let missing = URL(fileURLWithPath: "/nope/nudge-\(UUID().uuidString)")
+    expectNil(Checksum.sha256Hex(of: missing), "checksum: unreadable file yields nil, not a bogus digest")
 }
 
 // MARK: Version — semver parsing
