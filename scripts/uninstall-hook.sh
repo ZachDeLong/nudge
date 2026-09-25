@@ -25,7 +25,7 @@ jq --arg cmd "$HOOK_CMD" --arg agentCmd "$AGENT_HOOK_CMD" '
     map(select((.hooks // []) | all(.command != $cmd and .command != $agentCmd)));
 
   if .hooks then
-    reduce ["PreToolUse", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Notification", "Stop", "StopFailure", "SessionEnd"][] as $event (.;
+    reduce ["PreToolUse", "PermissionRequest", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Notification", "Stop", "StopFailure", "SessionEnd"][] as $event (.;
       if .hooks[$event] then
         .hooks[$event] |= strip_nudge |
         if (.hooks[$event] | length) == 0 then del(.hooks[$event]) else . end

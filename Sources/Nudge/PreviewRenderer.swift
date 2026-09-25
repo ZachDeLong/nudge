@@ -137,6 +137,37 @@ enum PreviewRenderer {
             cwd: cwd, sessionId: "s", permissionMode: "default",
             matchedPattern: "Bash(*--force*)"
         )
+        let codexBash = Prompt(
+            id: "c1", tool: "Bash",
+            command: "npm install --save-dev vitest",
+            cwd: cwd, sessionId: "s", permissionMode: "default",
+            agent: "codex",
+            detail: "Install vitest so the new tests can run?"
+        )
+        let codexPatch = Prompt(
+            id: "c2", tool: "apply_patch",
+            command: """
+            *** Begin Patch
+            *** Update File: Sources/Nudge/PromptStore.swift
+            @@
+            -    case withdrawn
+            +    case withdrawn(agent: String)
+            *** Update File: Sources/Nudge/MenuBarController.swift
+            @@
+            -            showNotice(.withdrawn)
+            +            showNotice(.withdrawn(agent: shown.agentName))
+            *** End Patch
+            """,
+            cwd: cwd, sessionId: "s", permissionMode: "default",
+            agent: "codex"
+        )
+        let claudeRequest = Prompt(
+            id: "r1", tool: "Bash",
+            command: "mkdir -p build/previews",
+            cwd: cwd, sessionId: "s", permissionMode: "default",
+            agent: "claude",
+            detail: "Create the previews output directory"
+        )
         let ask = Prompt(
             id: "a1", kind: .ask, tool: "Ask",
             command: "Two migrations touch the users table. Apply them in one transaction, or split them so the second can be rolled back on its own?",
@@ -204,7 +235,10 @@ enum PreviewRenderer {
             ("permission-edit",    make(edit,       depth: 1, prefs: watching, store: emptyChat)),
             ("permission-infix",   make(forceInfix, depth: 1, prefs: watching, store: emptyChat)),
             ("permission-allowed", make(push,       depth: 1, prefs: watching, store: emptyChat, notice: .allowed)),
-            ("permission-withdrawn", make(rm,       depth: 1, prefs: watching, store: emptyChat, notice: .withdrawn)),
+            ("permission-withdrawn", make(rm,       depth: 1, prefs: watching, store: emptyChat, notice: .withdrawn(agent: "Claude"))),
+            ("codex-command",      make(codexBash,  depth: 1, prefs: watching, store: emptyChat)),
+            ("codex-patch",        make(codexPatch, depth: 1, prefs: watching, store: emptyChat)),
+            ("claude-request",     make(claudeRequest, depth: 1, prefs: watching, store: emptyChat)),
             ("permission-no-keys", make(push,       depth: 1, prefs: watching, store: emptyChat, globalKeys: false)),
             ("ask",                make(ask,        depth: 1, prefs: watching, store: emptyChat)),
             ("idle-watching",      make(nil,        depth: 0, prefs: watching, store: emptyChat)),
