@@ -30,6 +30,9 @@ let cwd = inputJSON["cwd"] as? String ?? FileManager.default.currentDirectoryPat
 let sessionId = inputJSON["session_id"] as? String ?? "unknown"
 let permissionMode = inputJSON["permission_mode"] as? String ?? "default"
 
+// Auto and bypass modes mean "stop asking me". Stay out of it entirely.
+guard !selfDirectedPermissionModes.contains(permissionMode) else { exit(0) }
+
 // MARK: - Skip when user is already at a terminal/IDE
 
 // The agent's own app counts too: if you're looking at Codex in ChatGPT, its

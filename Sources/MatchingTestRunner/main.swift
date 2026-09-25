@@ -575,6 +575,11 @@ expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "cursor"]), .claude, 
 expect(HookAgent.codex.hostAppBundleIDs.contains("com.openai.codex"), true, "protocol: ChatGPT/Codex app counts as the agent's own UI")
 
 expect(HookEvent(rawValue: "PermissionRequest"), .permissionRequest, "protocol: event name parses")
+expect(selfDirectedPermissionModes.contains("auto"), true, "protocol: auto mode never gets permission popovers")
+expect(selfDirectedPermissionModes.contains("bypassPermissions"), true, "protocol: bypass / Codex Full access stays quiet")
+expect(selfDirectedPermissionModes.contains("default"), false, "protocol: default mode still asks")
+expect(selfDirectedPermissionModes.contains("acceptEdits"), false, "protocol: accept-edits still asks")
+expect(selfDirectedPermissionModes.contains("plan"), false, "protocol: plan mode still asks")
 expect(toolsLeftToAgentUI.contains("ExitPlanMode"), true, "protocol: plan approval stays in Claude's own UI")
 
 expect(displayTarget(toolName: "Bash", input: ["command": "mkdir build", "description": "Make dir"]), "mkdir build", "display: Bash shows the command")

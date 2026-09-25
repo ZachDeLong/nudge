@@ -12,7 +12,7 @@ Experimental: `nudge-claude` can launch Claude Code inside a tmux session that N
 
 Half the time im developing I run Claude Code on just my Mac screen. When Claude pauses to ask permission, the prompt shows up in whichever terminal Claude is running in. If I'm testing the app it just built, I don't see it for thirty seconds. Nudge surfaces those moments in the menu bar so I can answer without hunting.
 
-It's a quality-of-life thing, not a security tool. When you're on one screen, you just don't want to keep tabbing back to the terminal to click Allow. Nudge shows the same prompts Claude Code or Codex would have shown you. In auto mode that's hardly anything, because auto mode makes most of those calls itself. For the few things I always want to see, auto mode or not, there's a pattern list at `~/.config/nudge/patterns.txt`.
+It's a quality-of-life thing, not a security tool. When you're on one screen, you just don't want to keep tabbing back to the terminal to click Allow. Nudge shows the same prompts Claude Code or Codex would have shown you. For the few things I always want to see, even when Claude wouldn't ask, there's a pattern list at `~/.config/nudge/patterns.txt`. Auto mode and bypass mode (Codex calls it Full access) are different: you picked them so nothing asks you, so Nudge doesn't either. Questions from `nudge-ask` still come through.
 
 ## Install
 
@@ -84,7 +84,7 @@ On first launch, Nudge creates `~/.config/nudge/token` with a random local beare
 
 ## Patterns
 
-`~/.config/nudge/patterns.txt` is your always-ask list for Claude Code. A match pops up even when Claude wouldn't have asked, including in auto mode. One rule per line; the hook re-reads it on every call, so edits take effect immediately.
+`~/.config/nudge/patterns.txt` is your always-ask list for Claude Code. A match pops up even when Claude wouldn't have asked, like a command you've allow-listed. Patterns stay quiet in auto and bypass mode. One rule per line; the hook re-reads it on every call, so edits take effect immediately.
 
 ```
 Bash(git push:*)        # prefix

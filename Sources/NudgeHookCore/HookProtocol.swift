@@ -39,7 +39,7 @@ public enum HookAgent: String, Sendable {
 ///
 /// - `preToolUse` fires on every tool call, before the agent decides whether
 ///   to ask. Nudge only acts on it when a pattern in patterns.txt matches:
-///   the "always ask me about these" list, which applies even in auto mode.
+///   the "always ask me about these" list.
 /// - `permissionRequest` fires only when the agent is about to show its own
 ///   approval prompt. Nudge answers it in place of that prompt, so it covers
 ///   exactly what the agent would have asked, and stays silent while auto
@@ -48,6 +48,13 @@ public enum HookEvent: String, Sendable {
     case preToolUse = "PreToolUse"
     case permissionRequest = "PermissionRequest"
 }
+
+/// Permission modes where the agent makes its own calls: Claude's auto mode
+/// and bypass mode (Codex reports Full access as bypass). Choosing one means
+/// "stop asking me", so Nudge doesn't pop any permission prompt in them,
+/// patterns included. Anything the agent still insists on asking stays in its
+/// own UI. Questions sent with nudge-ask don't go through here.
+public let selfDirectedPermissionModes: Set<String> = ["auto", "bypassPermissions"]
 
 /// Tools whose approval dialog is a choice between workflows rather than a
 /// yes/no permission (Claude's plan approval offers several ways to proceed).
