@@ -63,6 +63,18 @@ struct PopoverView: View {
         let trimmed = prompt.command.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasCommand = !trimmed.isEmpty
 
+        // The agent's own one-line reason ("Create directory build"), when it
+        // sends one. Reads before the raw command, like an alert's message.
+        if let detail = prompt.detail {
+            Text(detail)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 8)
+                .textSelection(.enabled)
+        }
+
         if hasCommand {
             commandBox(for: prompt)
         } else {
@@ -89,7 +101,11 @@ struct PopoverView: View {
             .help("The pattern in ~/.config/nudge/patterns.txt that routed this prompt to Nudge")
         }
 
-        let offerOptions = hasCommand && Promotion.isPromotable(prompt.matchedPattern)
+        // "Allow for this session" works for any concrete command. "Always
+        // allow" needs a pattern Claude Code's allow list can express, so it
+        // only appears for promotable pattern matches.
+        let offerOptions = hasCommand
+        let offerAlways = Promotion.isPromotable(prompt.matchedPattern)
 
         ZStack {
           if let notice = state.notice {
@@ -117,7 +133,9 @@ struct PopoverView: View {
             if offerOptions {
                 Menu {
                     Button("Allow for this session", action: onSessionAllow)
-                    Button("Always allow \(Promotion.menuLabel(for: prompt))", action: onAlwaysAllow)
+                    if offerAlways {
+                        Button("Always allow \(Promotion.menuLabel(for: prompt))", action: onAlwaysAllow)
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 13, weight: .semibold))
@@ -127,7 +145,7 @@ struct PopoverView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .frame(width: 40)
-                .help("Allow for this session, or always")
+                .help(offerAlways ? "Allow for this session, or always" : "Allow for this session")
             }
           }
           .transition(.opacity)
@@ -140,7 +158,7 @@ struct PopoverView: View {
 
     @ViewBuilder
     private func askContent(for prompt: Prompt) -> some View {
-        header(prompt: prompt, title: "Claude is asking")
+        header(prompt: prompt, title: "\(prompt.agentName) is asking")
         AskBody(question: prompt.command, notice: state.notice, onSubmit: onSubmitText, onCancel: onCancelAsk)
     }
 
@@ -153,7 +171,7 @@ struct PopoverView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                Text("\(prompt.tool) · \(PromptCopy.projectName(prompt))")
+                Text("\(PromptCopy.toolLabel(prompt)) · \(PromptCopy.projectName(prompt))")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -173,6 +191,8 @@ struct PopoverView: View {
             Group {
                 if prompt.tool == "Bash" {
                     Text(CommandHighlighter.highlight(prompt.command))
+                } else if prompt.tool == "apply_patch" {
+                    Text(PatchHighlighter.highlight(prompt.command))
                 } else {
                     Text(prompt.command)
                 }
@@ -289,22 +309,39 @@ struct PopoverView: View {
 /// like the OS asking, not like a log line.
 enum PromptCopy {
     static func title(for prompt: Prompt) -> String {
+        let agent = prompt.agentName
         switch prompt.tool {
         case "Bash":
-            return "Claude wants to run a command"
+            return "\(agent) wants to run a command"
         case "Edit", "MultiEdit", "NotebookEdit":
-            return "Claude wants to edit a file"
+            return "\(agent) wants to edit a file"
+        case "apply_patch":
+            let count = patchedFileCount(prompt.command)
+            return count > 1 ? "\(agent) wants to edit \(count) files" : "\(agent) wants to edit a file"
         case "Write":
-            return "Claude wants to write a file"
+            return "\(agent) wants to write a file"
         case "Read":
-            return "Claude wants to read a file"
+            return "\(agent) wants to read a file"
         case "WebFetch", "WebSearch":
-            return "Claude wants to reach the web"
+            return "\(agent) wants to reach the web"
         case let tool where tool.hasPrefix("mcp__"):
-            return "Claude wants to use an MCP tool"
+            return "\(agent) wants to use an MCP tool"
         default:
-            return "Claude wants to use \(prompt.tool)"
+            return "\(agent) wants to use \(prompt.tool)"
         }
+    }
+
+    /// Files named in a Codex patch's `*** Add/Update/Delete File:` headers.
+    private static func patchedFileCount(_ patch: String) -> Int {
+        let headers = ["*** Add File: ", "*** Update File: ", "*** Delete File: "]
+        return Set(patch.split(whereSeparator: \.isNewline).compactMap { line in
+            headers.first(where: { line.hasPrefix($0) }).map { line.dropFirst($0.count) }
+        }).count
+    }
+
+    /// Tool name for the subtitle. Codex's `apply_patch` reads as "Patch".
+    static func toolLabel(_ prompt: Prompt) -> String {
+        prompt.tool == "apply_patch" ? "Patch" : prompt.tool
     }
 
     static func projectName(_ prompt: Prompt) -> String {
@@ -346,6 +383,32 @@ enum CommandHighlighter {
             if i < tokens.count - 1 {
                 result += AttributedString(" ")
             }
+        }
+        return result
+    }
+}
+
+/// Colours a Codex patch like a diff: file headers bold, additions green,
+/// removals red. The Begin/End Patch envelope carries no information for the
+/// reader, so it's dropped.
+enum PatchHighlighter {
+    static func highlight(_ patch: String) -> AttributedString {
+        let lines = patch.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { $0 != "*** Begin Patch" && $0 != "*** End Patch" }
+        var result = AttributedString()
+        for (i, raw) in lines.enumerated() {
+            var line = AttributedString(String(raw))
+            if raw.hasPrefix("*** ") {
+                line.font = .system(size: 12, weight: .semibold, design: .monospaced)
+            } else if raw.hasPrefix("+") {
+                line.foregroundColor = .green
+            } else if raw.hasPrefix("-") {
+                line.foregroundColor = .red
+            } else if raw.hasPrefix("@@") {
+                line.foregroundColor = .secondary
+            }
+            result += line
+            if i < lines.count - 1 { result += AttributedString("\n") }
         }
         return result
     }
@@ -884,7 +947,7 @@ private struct ToolBadge: View {
         switch tool {
         case "Bash":                                return "terminal.fill"
         case "Edit", "Write", "MultiEdit",
-             "NotebookEdit":                        return "pencil"
+             "NotebookEdit", "apply_patch":         return "pencil"
         case "Read":                                return "eye.fill"
         case "Glob", "Grep":                        return "magnifyingglass"
         case "WebFetch", "WebSearch":               return "globe"

@@ -40,16 +40,16 @@ enum DecisionNotice: Equatable {
     case allowed
     case denied
     case sent
-    /// The prompt left the queue without an answer from here: Claude was
-    /// interrupted, or the request timed out.
-    case withdrawn
+    /// The prompt left the queue without an answer from here: the agent
+    /// (named here) was interrupted, or the request timed out.
+    case withdrawn(agent: String)
 
     var label: String {
         switch self {
         case .allowed:   return "Allowed"
         case .denied:    return "Denied"
         case .sent:      return "Sent"
-        case .withdrawn: return "Claude stopped waiting"
+        case .withdrawn(let agent): return "\(agent) stopped waiting"
         }
     }
 
@@ -74,6 +74,7 @@ enum DecisionNotice: Equatable {
     /// How long the notice holds the panel. Our own decisions just need a
     /// beat to register; a withdrawal is unexpected, so it gets time to read.
     var holdDuration: TimeInterval {
-        self == .withdrawn ? 1.2 : 0.52
+        if case .withdrawn = self { return 1.2 }
+        return 0.52
     }
 }

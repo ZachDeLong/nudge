@@ -18,6 +18,12 @@ public struct Prompt: Codable, Equatable, Identifiable {
     public let sessionId: String
     public let permissionMode: String?
     public let matchedPattern: String?
+    /// Which agent is asking: "claude" or "codex". Nil from older hooks, and
+    /// from nudge-ask, reads as Claude.
+    public let agent: String?
+    /// The agent's own one-line explanation of the request, when it gives one
+    /// (both agents send `tool_input.description` with approval requests).
+    public let detail: String?
 
     public init(
         id: String,
@@ -27,7 +33,9 @@ public struct Prompt: Codable, Equatable, Identifiable {
         cwd: String,
         sessionId: String,
         permissionMode: String? = nil,
-        matchedPattern: String? = nil
+        matchedPattern: String? = nil,
+        agent: String? = nil,
+        detail: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -37,9 +45,14 @@ public struct Prompt: Codable, Equatable, Identifiable {
         self.sessionId = sessionId
         self.permissionMode = permissionMode
         self.matchedPattern = matchedPattern
+        self.agent = agent
+        self.detail = detail
     }
 
     public var resolvedKind: PromptKind { kind ?? .permission }
+
+    /// "Claude" or "Codex", for titles and notices.
+    public var agentName: String { agent == "codex" ? "Codex" : "Claude" }
 }
 
 public enum Decision: String, Codable, Equatable {

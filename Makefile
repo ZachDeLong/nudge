@@ -32,6 +32,8 @@ install: build
 	./scripts/seed-patterns.sh
 	@echo "→ Wiring hooks into Claude Code…"
 	./scripts/install-hook.sh
+	@echo "→ Wiring hooks into Codex (if installed)…"
+	./scripts/install-codex-hook.sh
 	@echo "→ Symlinking nudge-claude into PATH…"
 	@./scripts/link-cli.sh
 	@echo "→ Launching Nudge…"
@@ -87,4 +89,5 @@ uninstall:
 	rm -f $(HOME)/.config/nudge/port $(HOME)/.config/nudge/token $(HOME)/.config/nudge/no-autolaunch
 	@./scripts/link-cli.sh --uninstall
 	./scripts/uninstall-hook.sh
+	./scripts/install-codex-hook.sh --uninstall
 	@echo "✓ Nudge uninstalled."

@@ -536,6 +536,70 @@ expect(
     "match: quoted operator doesn't fool the splitter"
 )
 
+// MARK: HookProtocol — Claude Code and Codex answers
+//
+// Shapes confirmed against live runs (Claude Code 2.1.280, Codex CLI 0.154):
+// PermissionRequest wants `decision: {behavior}`; a bare string is ignored.
+
+func jsonString(_ object: [String: Any]) -> String {
+    let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    return String(data: data, encoding: .utf8)!
+}
+
+expect(
+    jsonString(hookDecisionOutput(event: .preToolUse, allow: true)),
+    #"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}"#,
+    "protocol: PreToolUse allow keeps its original shape"
+)
+expect(
+    jsonString(hookDecisionOutput(event: .preToolUse, allow: false)),
+    #"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"}}"#,
+    "protocol: PreToolUse deny"
+)
+expect(
+    jsonString(hookDecisionOutput(event: .permissionRequest, allow: true)),
+    #"{"hookSpecificOutput":{"decision":{"behavior":"allow"},"hookEventName":"PermissionRequest"}}"#,
+    "protocol: PermissionRequest allow uses the decision object"
+)
+expect(
+    jsonString(hookDecisionOutput(event: .permissionRequest, allow: false)),
+    #"{"hookSpecificOutput":{"decision":{"behavior":"deny","message":"The user denied this in Nudge."},"hookEventName":"PermissionRequest"}}"#,
+    "protocol: PermissionRequest deny tells the agent a person said no"
+)
+
+expect(HookAgent.from(arguments: ["nudge-hook"]), .claude, "protocol: no flag means Claude")
+expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "codex"]), .codex, "protocol: --agent codex")
+expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "Codex"]), .codex, "protocol: agent flag ignores case")
+expect(HookAgent.from(arguments: ["nudge-hook", "--agent"]), .claude, "protocol: dangling flag falls back to Claude")
+expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "cursor"]), .claude, "protocol: unknown agent falls back to Claude")
+expect(HookAgent.codex.hostAppBundleIDs.contains("com.openai.codex"), true, "protocol: ChatGPT/Codex app counts as the agent's own UI")
+
+expect(HookEvent(rawValue: "PermissionRequest"), .permissionRequest, "protocol: event name parses")
+expect(toolsLeftToAgentUI.contains("ExitPlanMode"), true, "protocol: plan approval stays in Claude's own UI")
+
+expect(displayTarget(toolName: "Bash", input: ["command": "mkdir build", "description": "Make dir"]), "mkdir build", "display: Bash shows the command")
+expect(displayTarget(toolName: "Write", input: ["file_path": "/tmp/a.txt", "content": "x"]), "/tmp/a.txt", "display: file tools show the path")
+expect(
+    displayTarget(toolName: "apply_patch", input: ["command": "*** Begin Patch\n*** Add File: a.txt\n+hi\n*** End Patch"]),
+    "*** Begin Patch\n*** Add File: a.txt\n+hi\n*** End Patch",
+    "display: Codex apply_patch shows the patch"
+)
+expect(displayTarget(toolName: "WebFetch", input: ["url": "https://example.com", "prompt": "x"]), "https://example.com", "display: WebFetch shows the URL")
+expect(displayTarget(toolName: "mcp__github__create_issue", input: ["title": "x"]), "mcp__github__create_issue", "display: MCP shows the tool name")
+expect(
+    displayTarget(toolName: "SomethingNew", input: ["b": 2, "a": "x", "description": "why"]),
+    #"{"a":"x","b":2}"#,
+    "display: unknown tools show their input, minus the description"
+)
+expect(displayTarget(toolName: "SomethingNew", input: [:]), "", "display: unknown tool with no input shows nothing")
+
+expect(
+    patchedFiles("*** Begin Patch\n*** Update File: a.swift\n@@\n-x\n+y\n*** Add File: b.txt\n+hi\n*** Delete File: c.txt\n*** Update File: a.swift\n*** End Patch"),
+    ["a.swift", "b.txt", "c.txt"],
+    "patch: files in order, once each"
+)
+expect(patchedFiles("echo hi"), [], "patch: non-patch text names no files")
+
 // MARK: TokenFile — exercises the public surface (ensure / read)
 
 func tempTokenURL() -> URL {

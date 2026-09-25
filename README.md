@@ -1,6 +1,6 @@
 # Nudge
 
-A macOS menu bar app for Claude Code permission prompts. When Claude pauses to ask before running something (say a `git push --force`, or an edit to a config file), Nudge pops a small panel out of the menu bar instead of asking back in the terminal. Click Allow from wherever you are.
+A macOS menu bar app for Claude Code and Codex permission prompts. When your agent stops to ask before running something (say a `git push --force`, or an edit to a config file), Nudge pops a small panel out of the menu bar instead of asking back in the terminal or the ChatGPT app. Click Allow from wherever you are.
 
 ![Permission popover](./docs/img/permission.png)
 
@@ -12,7 +12,7 @@ Experimental: `nudge-claude` can launch Claude Code inside a tmux session that N
 
 Half the time im developing I run Claude Code on just my Mac screen. When Claude pauses to ask permission, the prompt shows up in whichever terminal Claude is running in. If I'm testing the app it just built, I don't see it for thirty seconds. Nudge surfaces those moments in the menu bar so I can answer without hunting.
 
-It's a quality-of-life thing, not a security tool. When you're on one screen, you just don't want to keep tabbing back to the terminal to click Allow. Works in any Claude Code permission mode — default, accept-edits, plan, auto — whenever a tool call matches a pattern in `~/.config/nudge/patterns.txt`. Anything matching pops up; anything else goes through the normal Claude Code flow.
+It's a quality-of-life thing, not a security tool. When you're on one screen, you just don't want to keep tabbing back to the terminal to click Allow. Nudge shows the same prompts Claude Code or Codex would have shown you. In auto mode that's hardly anything, because auto mode makes most of those calls itself. For the few things I always want to see, auto mode or not, there's a pattern list at `~/.config/nudge/patterns.txt`.
 
 ## Install
 
@@ -75,16 +75,16 @@ Sparkle is on the roadmap once the project earns code signing.
 Two halves:
 
 - **The app** runs as a menu bar icon. It owns an `NSStatusItem`, a popover, and a tiny localhost HTTP server. The server is how the hook talks to it.
-- **The permission hook** is a small Swift CLI at `Nudge.app/Contents/MacOS/nudge-hook`. Claude Code runs it via `PreToolUse`. It reads the tool call from stdin, checks `patterns.txt`, and POSTs to the app with a local bearer token if there's a match. Then it blocks until you click Allow or Deny.
+- **The permission hook** is a small Swift CLI at `Nudge.app/Contents/MacOS/nudge-hook`. It listens for two hook events. `PermissionRequest` fires when Claude Code or Codex is about to show its own approval prompt, and Nudge shows it instead and passes your answer back. `PreToolUse` fires on every tool call, so there the hook only asks if the call matches a pattern in `patterns.txt`. Either way it POSTs to the app with a local bearer token and waits until you click Allow or Deny.
 - **The agent hook** is a non-blocking Swift CLI at `Nudge.app/Contents/MacOS/nudge-agent-hook`. Claude Code runs it for lifecycle/tool events like `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, and `Stop`, so Nudge can show whether a mirrored session is thinking, using a tool, waiting, idle, failed, or ended.
 
-If the app isn't running when the hook fires, the hook auto-launches it via `open -ga Nudge` — unless you quit it deliberately, in which case it stays quit until you start it yourself. If anything fails, the hook exits silently and Claude falls back to its normal terminal prompt.
+If the app isn't running when the hook fires, the hook auto-launches it via `open -ga Nudge` — unless you quit it deliberately, in which case it stays quit until you start it yourself. If anything fails, the hook exits silently and the agent falls back to its own prompt.
 
 On first launch, Nudge creates `~/.config/nudge/token` with a random local bearer token. The server requires that token for `/prompt` and `/ask`, which keeps unrelated local processes from casually posting fake prompts if they discover the port.
 
 ## Patterns
 
-`~/.config/nudge/patterns.txt` is the opt-in list. One rule per line; the hook re-reads it on every call, so edits take effect immediately.
+`~/.config/nudge/patterns.txt` is your always-ask list for Claude Code. A match pops up even when Claude wouldn't have asked, including in auto mode. One rule per line; the hook re-reads it on every call, so edits take effect immediately.
 
 ```
 Bash(git push:*)        # prefix
@@ -95,6 +95,20 @@ Mcp(playwright__*)      # MCP server-wide
 
 Full syntax, the chained-command and quote-normalization rules, "Always allow" promotion, and the import-from-`permissions.ask` flow are in [docs/patterns.md](docs/patterns.md).
 
+## Codex
+
+Nudge works with Codex in the ChatGPT app and in the terminal. If you have a `~/.codex` folder, `make install` adds one entry to `~/.codex/hooks.json`. After that, every approval Codex asks for (shell commands, file patches) goes to Nudge, and patches show up as a colored diff.
+
+Codex won't run a new hook until you trust it, and the ChatGPT app can't do that yet. You only have to do it once, from a terminal:
+
+```sh
+/Applications/ChatGPT.app/Contents/Resources/codex   # or `codex`, if you have the CLI
+```
+
+Type `/hooks`, pick the Nudge entry, and press `t`. Check the list before you do: that screen can trust every pending hook in one go.
+
+Some differences from Claude Code. Patterns don't apply to Codex. "Always allow" isn't offered either, because Codex keeps its rules in its own format, but "Allow for this session" works the same. And with "Skip when terminal is focused" on, Nudge also stays quiet while the ChatGPT app is in front, since Codex's own prompt is right there.
+
 ## Settings
 
 Click the menu bar icon when there's no prompt up. The idle popover doubles as a settings panel:
@@ -102,8 +116,8 @@ Click the menu bar icon when there's no prompt up. The idle popover doubles as a
 ![Settings popover](./docs/img/settings.png)
 
 
-- **Pause Nudge / Resume Nudge.** Master switch. Paused = both hooks exit silently and Claude falls back to its native terminal prompt. That covers the agent hook too, so a paused Nudge stops collecting activity as well as popping panels. The status pill and icon both reflect the current state.
-- **Skip when terminal is focused** (on by default). When the frontmost app is a known terminal or IDE (Ghostty, iTerm2, Terminal.app, Warp, wezterm, Hyper, VS Code, Cursor), the hook skips the popover. You're already there; Claude's native prompt is fine.
+- **Pause Nudge / Resume Nudge.** Master switch. Paused = both hooks exit silently and Claude or Codex falls back to its own prompt. That covers the agent hook too, so a paused Nudge stops collecting activity as well as popping panels. The switch and the menu bar icon both show the current state.
+- **Skip when terminal is focused** (on by default). When the frontmost app is a known terminal or IDE (Ghostty, iTerm2, Terminal.app, Warp, wezterm, Hyper, VS Code, Cursor), the hook skips the popover. You're already there; the agent's own prompt is fine.
 - **Answer with ⏎ and esc from any app.** While a prompt is up, Enter allows and Esc denies, even if you're in another app. macOS won't pass those keys to Nudge until you turn it on in System Settings → Privacy & Security → Accessibility. Until you do, the settings panel shows an Enable… button and the popover leaves off the key hints. Nudge ignores the keys for the first 0.6 seconds a prompt is on screen, and it ignores them if you're holding a modifier or the key is repeating. So pressing Enter in a browser form just as a prompt pops up won't approve it. One annoyance: the build is unsigned, so macOS forgets the grant every time you rebuild or update. Remove Nudge from the list and turn it back on.
 - **Quit Nudge.** Exits the menu bar app entirely and stays exited — the hooks won't relaunch it behind your back. Start it again from Spotlight or `/Applications` and auto-launch resumes. (A crash is different: that still auto-recovers on the next hook call.)
 
@@ -182,8 +196,8 @@ Session metadata at `~/.config/nudge/sessions/*.json` is owner-only (`0o600`) an
 
 - **Unsigned build.** The Makefile runs `xattr -d com.apple.quarantine` so it launches without Gatekeeper complaining, but the build isn't code-signed or notarized. If you download the prebuilt zip, you'll need to run that `xattr` command yourself once.
 - **One Mac at a time.** Patterns aren't synced across machines.
-- **Hooks fire before Claude classifies.** That's why patterns are explicit opt-in rather than "everything auto mode would prompt about." `PreToolUse` runs before Claude decides whether a call would trigger a prompt, and the `PermissionRequest` event (which fires at the right time) is observe-only.
-- **Queue is FIFO with a 5-minute timeout.** Pile up enough prompts and the older ones expire. If Claude stops waiting on a prompt (say you hit Esc in the terminal), it drops out of the queue right away. The panel tells you and moves on to the next one.
+- **Plan approvals stay in Claude Code.** Accepting a plan means choosing how Claude should carry on, and a plain Allow can't say which, so Nudge leaves that dialog alone.
+- **Queue is FIFO with a 5-minute timeout.** Pile up enough prompts and the older ones expire. If Claude or Codex stops waiting on a prompt (say you hit Esc in the terminal), it drops out of the queue right away. The panel tells you and moves on to the next one.
 - **Agent session mirroring requires `nudge-claude`.** Nudge can cleanly mirror sessions it launched through tmux; it does not attach to arbitrary existing terminal tabs.
 
 ## Uninstall
@@ -192,7 +206,7 @@ Session metadata at `~/.config/nudge/sessions/*.json` is owner-only (`0o600`) an
 cd /path/to/nudge && make uninstall
 ```
 
-Removes `/Applications/Nudge.app`, kills the running app, removes runtime port/token files, and cleans the hook out of `settings.json` (with a backup). Your patterns and prefs are left in `~/.config/nudge/`.
+Removes `/Applications/Nudge.app`, kills the running app, removes runtime port/token files, and cleans the hooks out of `~/.claude/settings.json` and `~/.codex/hooks.json` (with backups). Your patterns and prefs are left in `~/.config/nudge/`.
 
 ## License
 

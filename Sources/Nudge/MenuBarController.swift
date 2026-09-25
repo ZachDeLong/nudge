@@ -396,7 +396,7 @@ final class MenuBarController: NSObject {
         // Say so instead of letting it vanish mid-read.
         if panel.isVisible, let shown = store.prompt, shown.id != prompt?.id {
             deferredHead = (prompt, depth)
-            showNotice(.withdrawn)
+            showNotice(.withdrawn(agent: shown.agentName))
             return
         }
         applyHead(prompt: prompt, depth: depth)

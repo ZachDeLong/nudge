@@ -45,10 +45,14 @@ done
 # Count active patterns for the success message (skip comments and blanks).
 PATTERN_COUNT=$(grep -cE '^[^#[:space:]].*' "$PATTERNS" || true)
 
-# Install one PreToolUse entry with a tool-name regex matcher for permission
+# Install one PreToolUse entry with a tool-name regex matcher for pattern
 # prompts. Claude Code's `matcher` field filters by tool name only, so we
 # narrow to the families we know how to handle and let the hook binary do the
 # value-level filtering.
+#
+# And one PermissionRequest entry for every tool: it only fires when Claude
+# Code is about to show its own approval prompt, and Nudge answers in its
+# place. Auto mode and allow rules keep deciding everything else.
 #
 # Also install a non-blocking lifecycle hook side-channel. It observes the
 # same PreToolUse stream plus PostToolUse/failure/UserPromptSubmit/
@@ -77,6 +81,12 @@ jq \
         "hooks": [{ "type": "command", "command": $agentCmd }]
       }
     ] |
+    .hooks.PermissionRequest //= [] |
+    .hooks.PermissionRequest |= strip_nudge |
+    .hooks.PermissionRequest += [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": $cmd }]
+    }] |
     .hooks.PostToolUse //= [] |
     .hooks.PostToolUse |= strip_nudge |
     .hooks.PostToolUse += [{
@@ -102,6 +112,6 @@ jq \
 jq -e . "$SETTINGS.tmp" > /dev/null
 mv "$SETTINGS.tmp" "$SETTINGS"
 
-echo "✓ Installed Nudge hooks (permission matcher: $MATCHER) into $SETTINGS"
+echo "✓ Installed Nudge hooks (approval prompts + pattern matcher: $MATCHER) into $SETTINGS"
 echo "  Active patterns: $PATTERN_COUNT (read from $PATTERNS at hook time)"
 echo "  Backup: $BACKUP"
