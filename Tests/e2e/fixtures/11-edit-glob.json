@@ -1,0 +1,38 @@
+{
+  "description": "Edit on a path glob: ** crosses directories, * does not",
+  "patterns": [
+    "Edit(/etc/**)",
+    "Edit(**/.github/workflows/*)"
+  ],
+  "payload": {
+    "session_id": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "/Users/dev/code/api/.github/workflows/ci.yml",
+      "old_string": "runs-on: ubuntu-latest",
+      "new_string": "runs-on: macos-latest"
+    },
+    "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Edit",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "permissionMode": "acceptEdits",
+    "command": "/Users/dev/code/api/.github/workflows/ci.yml",
+    "matchedPattern": "Edit(**/.github/workflows/*)"
+  },
+  "respond": "allow",
+  "expectStdout": {
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "allow"
+    }
+  },
+  "expectExit": 0
+}

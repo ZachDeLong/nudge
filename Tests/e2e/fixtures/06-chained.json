@@ -1,0 +1,36 @@
+{
+  "description": "cd x && git push: prefix matches the second segment; permission_mode passes through",
+  "patterns": [
+    "Bash(git push:*)"
+  ],
+  "payload": {
+    "session_id": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "cd ~/code/api && git push origin main",
+      "description": "Push from the api repo"
+    },
+    "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "permissionMode": "acceptEdits",
+    "command": "cd ~/code/api && git push origin main",
+    "matchedPattern": "Bash(git push:*)"
+  },
+  "respond": "allow",
+  "expectStdout": {
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "allow"
+    }
+  },
+  "expectExit": 0
+}

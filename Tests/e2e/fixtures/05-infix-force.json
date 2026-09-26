@@ -1,0 +1,37 @@
+{
+  "description": "infix --force wins over a prefix match on the same command (no Always allow)",
+  "patterns": [
+    "Bash(git push:*)",
+    "Bash(*--force*)"
+  ],
+  "payload": {
+    "session_id": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "git push --force-with-lease origin main",
+      "description": "Force-push rebased main"
+    },
+    "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "permissionMode": "default",
+    "command": "git push --force-with-lease origin main",
+    "matchedPattern": "Bash(*--force*)"
+  },
+  "respond": "deny",
+  "expectStdout": {
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny"
+    }
+  },
+  "expectExit": 0
+}

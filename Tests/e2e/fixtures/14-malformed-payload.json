@@ -1,0 +1,10 @@
+{
+  "description": "malformed stdin falls back to Claude's own flow: exit 0, no output, nothing queued",
+  "patterns": [
+    "Bash(*)",
+    "Bash(git push:*)"
+  ],
+  "payload": "{\"tool_name\": \"Bash\", \"tool_input\": {\"command\": \"git push\"",
+  "expectStdout": null,
+  "expectExit": 0
+}

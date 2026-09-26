@@ -1,0 +1,23 @@
+{
+  "description": "no pattern matches: hook exits 0 silently, nothing queued",
+  "patterns": [
+    "Bash(git push:*)",
+    "Bash(rm:*)",
+    "Edit(/etc/**)"
+  ],
+  "payload": {
+    "session_id": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "git status && npm test",
+      "description": "Check status and run tests"
+    },
+    "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
+  },
+  "expectStdout": null,
+  "expectExit": 0
+}

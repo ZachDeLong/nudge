@@ -1,0 +1,36 @@
+{
+  "description": "Claude Code's heredoc commit shape matches Bash(git commit:*) and shows the whole command",
+  "patterns": [
+    "Bash(git commit:*)"
+  ],
+  "payload": {
+    "session_id": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "git commit -m \"$(cat <<'EOF'\nAdd rate limiting to the login endpoint\n\nCaps attempts per IP at 10/min.\nEOF\n)\"",
+      "description": "Commit the rate limiter"
+    },
+    "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "permissionMode": "default",
+    "command": "git commit -m \"$(cat <<'EOF'\nAdd rate limiting to the login endpoint\n\nCaps attempts per IP at 10/min.\nEOF\n)\"",
+    "matchedPattern": "Bash(git commit:*)"
+  },
+  "respond": "allow",
+  "expectStdout": {
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "allow"
+    }
+  },
+  "expectExit": 0
+}
