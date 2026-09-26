@@ -373,14 +373,51 @@ func clickAllow(peekaboo: String, appPID: pid_t, prompt: [String: Any], screensh
 
 /// Why Peekaboo can't drive the UI right now, or nil if it can. Checked
 /// before starting Claude, so a missing grant is a SKIP, not a wasted run.
-func peekabooNotReady(_ peekaboo: String) -> String? {
-    let r = runTool(peekaboo, ["permissions", "--json"], timeout: 30)
-    guard let obj = try? JSONSerialization.jsonObject(with: Data(r.out.utf8)) as? [String: Any],
-          let perms = (obj["data"] as? [String: Any])?["permissions"] as? [[String: Any]]
-    else { return "`peekaboo permissions` failed: \(r.out.prefix(200)) \(r.err.prefix(200))" }
-    let missing = perms.filter { $0["isRequired"] as? Bool == true && $0["isGranted"] as? Bool != true }
-        .compactMap { $0["name"] as? String }
-    return missing.isEmpty ? nil : "Peekaboo lacks \(missing.joined(separator: " + ")) (see `peekaboo permissions`)"
+/// `peekaboo permissions` misreports on macOS 27, so this does the real
+/// thing on the harness's own UI: a synthetic prompt (no Claude) opens the
+/// isolated Nudge's popover, and `see` must capture it and read its buttons.
+func peekabooNotReady(_ peekaboo: String, instance: NudgeInstance, binDir: URL, artifacts: URL) -> String? {
+    let command = "nudge-e2e-preflight"
+    do {
+        try instance.setPatterns(["Bash(\(command))"])
+    } catch {
+        return "preflight: couldn't write patterns: \(error)"
+    }
+    let payload: [String: Any] = [
+        "session_id": "nudge-e2e-preflight", "cwd": "/tmp", "permission_mode": "default",
+        "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": ["command": command],
+    ]
+    guard let data = try? JSONSerialization.data(withJSONObject: payload),
+          let hook = try? HookRun(binDir: binDir, instance: instance, payload: data)
+    else { return "preflight: couldn't run nudge-hook" }
+    defer {
+        instance.drain()
+        _ = hook.finish(within: 5)
+        hook.kill()
+    }
+    guard waitUntil(5, { !((try? instance.queue()) ?? []).isEmpty }) else {
+        return "preflight: the synthetic prompt never reached the isolated Nudge"
+    }
+    var window: WindowInfo?
+    guard waitUntil(5, {
+        window = popoverWindows(ownedBy: [instance.process.processIdentifier]).first
+        return window != nil
+    }), let window else {
+        return "preflight: the isolated Nudge's popover didn't appear on screen"
+    }
+    usleep(500_000)
+    let shot = artifacts.appendingPathComponent("peekaboo-preflight.png")
+    let see = runTool(peekaboo, ["see", "--window-id", "\(window.id)", "--json", "--path", shot.path], timeout: 40)
+    let obj = try? JSONSerialization.jsonObject(with: Data(see.out.utf8)) as? [String: Any]
+    let elements = (obj?["data"] as? [String: Any])?["ui_elements"] as? [[String: Any]] ?? []
+    guard obj?["success"] as? Bool == true, FileManager.default.fileExists(atPath: shot.path) else {
+        return "Peekaboo can't capture the popover (Screen Recording?): \(see.out.prefix(300)) \(see.err.prefix(200))"
+    }
+    guard elements.contains(where: { $0["ax_role"] as? String == "AXButton" }) else {
+        return "Peekaboo captured the popover but read no buttons from it (Accessibility?)"
+    }
+    try? FileManager.default.removeItem(at: shot)
+    return nil
 }
 
 // MARK: - One attempt
@@ -765,7 +802,8 @@ func runClaudeSuite(_ opts: Options) -> Never {
 
     for fx in fixtures {
         if fx.respond == "click" {
-            let why = peekaboo.map(peekabooNotReady) ?? "peekaboo not found (pass --peekaboo)"
+            let why = peekaboo.map { peekabooNotReady($0, instance: instance, binDir: opts.binDir, artifacts: artifacts) }
+                ?? "peekaboo not found (pass --peekaboo)"
             if let why {
                 print("SKIP         \(fx.name) — \(why)")
                 tally[.skip, default: 0] += 1
