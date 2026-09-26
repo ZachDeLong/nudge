@@ -1,4 +1,4 @@
-.PHONY: build clean run app install uninstall sync-patterns import-permissions test test-popup previews icon
+.PHONY: build clean run app install uninstall sync-patterns import-permissions test e2e test-popup previews icon
 
 CONFIG ?= release
 BUILD_DIR := .build/$(CONFIG)
@@ -62,6 +62,16 @@ test:
 	fi
 	swift build --product nudge-test-matching -c $(CONFIG)
 	$(BUILD_DIR)/nudge-test-matching
+
+# End-to-end: recorded Claude Code hook payloads through the real nudge-hook
+# into a real Nudge, answered over its test API. Runs its own isolated Nudge
+# (temp config dir, port, token), so the installed app and ~/.config/nudge
+# are never touched. A second menu bar icon may flash while it runs.
+# Usage: make e2e                  (all fixtures in Tests/e2e/fixtures)
+#        make e2e ONLY=withdrawal  (fixtures whose name contains ONLY)
+e2e:
+	swift build -c $(CONFIG)
+	$(BUILD_DIR)/nudge-test-e2e --bin-dir $(BUILD_DIR) --fixtures Tests/e2e/fixtures $(ONLY)
 
 # Fires a test prompt directly at Nudge's HTTP server (bypasses Claude Code).
 # Usage: make test-popup            (default: git push --force, default mode)
