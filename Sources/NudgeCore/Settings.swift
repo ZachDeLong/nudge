@@ -14,8 +14,7 @@ public struct Prefs: Codable, Equatable {
     public static let `default` = Prefs(enabled: true, skipWhenTerminalFocused: true)
 
     public static var url: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/nudge/prefs.json")
+        ConfigDir.url.appendingPathComponent("prefs.json")
     }
 
     public init(enabled: Bool, skipWhenTerminalFocused: Bool) {

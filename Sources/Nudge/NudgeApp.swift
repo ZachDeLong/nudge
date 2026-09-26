@@ -45,6 +45,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Task {
+            // An isolated instance (NUDGE_CONFIG_DIR set) leaves 19283 to the
+            // user's real Nudge; hooks find it through its own port file.
+            if ConfigDir.isOverridden {
+                do {
+                    try await self.bringUpServer(port: 0)
+                } catch {
+                    NSLog("Nudge: server failed to start at all. \(error)")
+                }
+                return
+            }
             do {
                 try await self.bringUpServer(port: 19283)
             } catch {

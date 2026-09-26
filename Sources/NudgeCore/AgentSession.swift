@@ -98,8 +98,7 @@ public struct AgentSessionDetail: Codable, Equatable, Identifiable, Sendable {
 
 public enum AgentSessionFiles {
     public static var directoryURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/nudge/sessions")
+        ConfigDir.url.appendingPathComponent("sessions")
     }
 
     public static func metadataURL(for id: String) -> URL {

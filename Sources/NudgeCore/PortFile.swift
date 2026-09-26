@@ -2,8 +2,7 @@ import Foundation
 
 public enum PortFile {
     public static var defaultURL: URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".config/nudge/port")
+        ConfigDir.url.appendingPathComponent("port")
     }
 
     public enum FileError: Error, Equatable {

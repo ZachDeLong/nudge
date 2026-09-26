@@ -4,8 +4,7 @@ import Security
 
 public enum TokenFile {
     public static var defaultURL: URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".config/nudge/token")
+        ConfigDir.url.appendingPathComponent("token")
     }
 
     public enum FileError: Error, Equatable {

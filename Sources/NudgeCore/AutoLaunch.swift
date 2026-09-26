@@ -15,8 +15,7 @@ import Foundation
 /// quits are honored, accidental deaths are healed.
 public enum AutoLaunch {
     public static var markerURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/nudge/no-autolaunch")
+        ConfigDir.url.appendingPathComponent("no-autolaunch")
     }
 
     /// Called from `applicationWillTerminate`.

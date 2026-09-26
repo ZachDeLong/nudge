@@ -53,8 +53,7 @@ let target = matchTarget(for: toolName, input: toolInput)
 
 guard family(for: toolName) != .unknown else { exit(0) }
 
-let patternsURL = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent(".config/nudge/patterns.txt")
+let patternsURL = ConfigDir.url.appendingPathComponent("patterns.txt")
 
 func loadPatterns() -> [String] {
     guard let raw = try? String(contentsOf: patternsURL, encoding: .utf8) else { return [] }
