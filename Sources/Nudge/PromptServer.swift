@@ -29,19 +29,24 @@ actor PromptServer {
     private(set) var boundPort: UInt16 = 0
     private let timeoutSeconds: TimeInterval
     private let tokenURL: URL
+    /// Serves `/test/*` (see `respondToTestAPI`). Off unless the app was
+    /// launched by the e2e harness; see `TestAPI.isEnabled`.
+    private let testAPIEnabled: Bool
 
     init(
         queue: PromptQueue,
         activityStore: AgentActivityStore,
         port: UInt16,
         tokenURL: URL = TokenFile.defaultURL,
-        timeoutSeconds: TimeInterval = 300
+        timeoutSeconds: TimeInterval = 300,
+        testAPIEnabled: Bool = false
     ) {
         self.queue = queue
         self.activityStore = activityStore
         self.requestedPort = port == 0 ? .any : NWEndpoint.Port(rawValue: port)!
         self.timeoutSeconds = timeoutSeconds
         self.tokenURL = tokenURL
+        self.testAPIEnabled = testAPIEnabled
     }
 
     func start() async throws {
@@ -150,6 +155,12 @@ actor PromptServer {
             await respondToAgentEvent(req, on: conn)
             return
         }
+        // Disabled, `/test/*` falls through to the 404 below like any unknown
+        // path, so a normal install can't be probed for it.
+        if testAPIEnabled, req.path.hasPrefix("/test/") {
+            await respondToTestAPI(req, on: conn)
+            return
+        }
         guard req.path == "/prompt" || req.path == "/ask" else {
             let resp = HTTPCodec.writeResponse(status: 404, contentType: "text/plain", body: Array("not found".utf8))
             await sendAndAwait(Data(resp), on: conn)
@@ -216,6 +227,46 @@ actor PromptServer {
             await sendAndAwait(Data(resp), on: conn)
         } catch {
             let resp = HTTPCodec.writeResponse(status: 400, contentType: "text/plain", body: Array("bad json".utf8))
+            await sendAndAwait(Data(resp), on: conn)
+        }
+    }
+
+    private struct TestResolveRequest: Decodable {
+        let id: String
+        let decision: Decision
+        let text: String?
+    }
+
+    /// E2E harness endpoints, behind the same bearer token as everything else:
+    ///
+    /// - `POST /test/queue` → `{"prompts": [Prompt]}`, head first.
+    /// - `POST /test/resolve` with `{"id", "decision", "text"?}` → answers the
+    ///   head prompt exactly as a click would reach the queue. 409 if `id`
+    ///   isn't the head, the same stale-answer guard the popover gets.
+    ///
+    /// This answers prompts without a click, so it only exists on an instance
+    /// the harness launched with its own config dir (`TestAPI.isEnabled`).
+    private func respondToTestAPI(_ req: HTTPCodec.Request, on conn: NWConnection) async {
+        switch req.path {
+        case "/test/queue":
+            let prompts = await queue.snapshot()
+            let body = (try? JSONEncoder().encode(["prompts": prompts])) ?? Data()
+            let resp = HTTPCodec.writeResponse(status: 200, contentType: "application/json", body: Array(body))
+            await sendAndAwait(Data(resp), on: conn)
+        case "/test/resolve":
+            guard let body = try? JSONDecoder().decode(TestResolveRequest.self, from: Data(req.body)) else {
+                let resp = HTTPCodec.writeResponse(status: 400, contentType: "text/plain", body: Array("bad json".utf8))
+                await sendAndAwait(Data(resp), on: conn)
+                return
+            }
+            let response = DecisionResponse(decision: body.decision, text: body.text)
+            let resolved = await queue.resolve(id: body.id, with: response)
+            let resp = resolved
+                ? HTTPCodec.writeResponse(status: 200, contentType: "text/plain", body: Array("ok".utf8))
+                : HTTPCodec.writeResponse(status: 409, contentType: "text/plain", body: Array("not the head prompt".utf8))
+            await sendAndAwait(Data(resp), on: conn)
+        default:
+            let resp = HTTPCodec.writeResponse(status: 404, contentType: "text/plain", body: Array("not found".utf8))
             await sendAndAwait(Data(resp), on: conn)
         }
     }

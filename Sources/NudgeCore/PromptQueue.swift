@@ -80,6 +80,11 @@ public actor PromptQueue {
         resolve(id: id, with: DecisionResponse(decision: decision))
     }
 
+    /// Every pending prompt, head first. Read-only view for the e2e test API.
+    public func snapshot() -> [Prompt] {
+        pending.map(\.prompt)
+    }
+
     public func setOnHeadChange(_ cb: @escaping (Prompt?, Int) -> Void) {
         onHeadChange = cb
         notifyHead()

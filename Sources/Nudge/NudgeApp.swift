@@ -70,7 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func bringUpServer(port: UInt16) async throws {
         _ = try TokenFile.ensure()
-        let server = PromptServer(queue: queue, activityStore: activityStore, port: port)
+        let testAPI = TestAPI.isEnabled
+        if testAPI {
+            NSLog("Nudge: e2e test API enabled (config dir \(ConfigDir.url.path))")
+        }
+        let server = PromptServer(queue: queue, activityStore: activityStore, port: port, testAPIEnabled: testAPI)
         try await server.start()
         let bound = await server.boundPort
         try PortFile.write(port: bound)
@@ -84,5 +88,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Only reached on a deliberate quit — a crash or `pkill` skips this, so
         // unexpected exits still auto-recover on the next hook call.
         AutoLaunch.suppress()
+    }
+}
+
+/// Gate for the server's `/test/*` endpoints, which read the queue and answer
+/// prompts over HTTP for the e2e harness (`make e2e`). Answering without a
+/// click is exactly what Nudge must never allow on a real install, so this
+/// takes two things a normal launch never has: `NUDGE_TEST_API=1` *and* a
+/// `NUDGE_CONFIG_DIR` override. The endpoints still require the bearer token,
+/// and the harness's token lives in its own temp config dir.
+enum TestAPI {
+    static var isEnabled: Bool {
+        ProcessInfo.processInfo.environment["NUDGE_TEST_API"] == "1" && ConfigDir.isOverridden
     }
 }
