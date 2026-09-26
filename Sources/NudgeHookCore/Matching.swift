@@ -228,6 +228,17 @@ public func splitBashCommand(_ command: String) -> [String] {
         }
 
         if arithDepth == 0 {
+            // A bare `((` at the start of a word is an arithmetic command, like
+            // `$((`: its `<<` is a shift and must not open a heredoc.
+            if c == "(" && atWordStart() {
+                let n1 = command.index(after: i)
+                if n1 < command.endIndex && command[n1] == "(" {
+                    arithDepth += 1
+                    current.append(contentsOf: "((")
+                    i = command.index(after: n1)
+                    continue
+                }
+            }
             // The line holding `<<EOF` ended: its heredoc bodies come next.
             if c.isNewline && !pendingHeredocs.isEmpty {
                 let nested = dollarParenDepth > 0 || subshellDepth > 0 || braceDepth > 0

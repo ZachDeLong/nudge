@@ -210,6 +210,18 @@ expect(
 )
 expect(splitBashCommand("cat <<< 'hi' && ls"), ["cat <<< 'hi'", "ls"], "split: <<< is a here-string, not a heredoc")
 expect(splitBashCommand("echo $((1<<2)) && ls"), ["echo $((1<<2))", "ls"], "split: << inside arithmetic is a shift")
+expect(
+    splitBashCommand("((x=1<<2))\necho done && rm -rf /tmp/important"),
+    ["((x=1<<2))", "echo done", "rm -rf /tmp/important"],
+    "split: << inside a bare ((...)) is a shift, not a heredoc"
+)
+expect(splitBashCommand("((x<<=2)); rm foo"), ["((x<<=2))", "rm foo"], "split: <<= inside ((...))")
+expect(splitBashCommand("((16#ff > 1)) && ls"), ["((16#ff > 1))", "ls"], "split: # inside ((...)) isn't a comment")
+expect(
+    matchedPattern(toolName: "Bash", target: "((x=1<<2))\necho done && rm -rf /tmp/important", patterns: ["Bash(rm:*)"]),
+    "Bash(rm:*)",
+    "match: rm after a bare ((...)) shift"
+)
 expect(splitBashCommand("# Let's ship it\ngit push origin main"), ["git push origin main"], "split: apostrophe in a comment")
 expect(splitBashCommand("ls # don't\nrm foo"), ["ls", "rm foo"], "split: trailing comment")
 expect(splitBashCommand("echo foo#bar && ls"), ["echo foo#bar", "ls"], "split: # inside a word isn't a comment")
