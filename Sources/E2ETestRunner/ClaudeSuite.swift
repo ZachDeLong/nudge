@@ -444,6 +444,7 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
     var firstPromptAt: Date?
     var answeredAt: Date?
     var killedAt: Date?
+    var withdrawnAt: Date?
     var violations: [String] = []
     var lastWatch = Date.distantPast
     var timedOut = false
@@ -465,7 +466,12 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
                 if !violations.contains(v) { violations.append(v) }
             }
         }
-        if let head = (try? instance.queue())?.first, let id = head["id"] as? String, !seen.contains(id) {
+        let queue = (try? instance.queue()) ?? []
+        if killedAt != nil, withdrawnAt == nil, let id = prompts.first?["id"] as? String,
+           !queue.contains(where: { $0["id"] as? String == id }) {
+            withdrawnAt = Date()
+        }
+        if let head = queue.first, let id = head["id"] as? String, !seen.contains(id) {
             seen.insert(id)
             prompts.append(head)
             let first = prompts.count == 1
@@ -509,8 +515,8 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
     // Withdrawal: the killed session's prompt must leave the queue.
     var withdrawnAfter: TimeInterval?
     if let killedAt, let id = prompts.first?["id"] as? String {
-        if waitUntil(10, { ((try? instance.queue()) ?? []).allSatisfy { $0["id"] as? String != id } }) {
-            withdrawnAfter = Date().timeIntervalSince(killedAt)
+        if withdrawnAt != nil || waitUntil(10, { ((try? instance.queue()) ?? []).allSatisfy { $0["id"] as? String != id } }) {
+            withdrawnAfter = (withdrawnAt ?? Date()).timeIntervalSince(killedAt)
         } else {
             a.problems.append("prompt \(id) still queued 10s after claude was killed (should be withdrawn)")
         }
