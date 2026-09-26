@@ -371,6 +371,18 @@ func clickAllow(peekaboo: String, appPID: pid_t, prompt: [String: Any], screensh
     return problems
 }
 
+/// Why Peekaboo can't drive the UI right now, or nil if it can. Checked
+/// before starting Claude, so a missing grant is a SKIP, not a wasted run.
+func peekabooNotReady(_ peekaboo: String) -> String? {
+    let r = runTool(peekaboo, ["permissions", "--json"], timeout: 30)
+    guard let obj = try? JSONSerialization.jsonObject(with: Data(r.out.utf8)) as? [String: Any],
+          let perms = (obj["data"] as? [String: Any])?["permissions"] as? [[String: Any]]
+    else { return "`peekaboo permissions` failed: \(r.out.prefix(200)) \(r.err.prefix(200))" }
+    let missing = perms.filter { $0["isRequired"] as? Bool == true && $0["isGranted"] as? Bool != true }
+        .compactMap { $0["name"] as? String }
+    return missing.isEmpty ? nil : "Peekaboo lacks \(missing.joined(separator: " + ")) (see `peekaboo permissions`)"
+}
+
 // MARK: - One attempt
 
 enum Verdict: String {
@@ -741,6 +753,10 @@ func runClaudeSuite(_ opts: Options) -> Never {
     print("→ isolated Nudge pid \(activeAppPID) on 127.0.0.1:\(instance.port), config \(instance.configDir.path)")
     print("→ \(claude) --model \(opts.model); artifacts in \(artifacts.path)")
     if let peekaboo { print("→ \(peekaboo)") }
+    let realPIDs = processTable().filter { $0.path == realNudgeAppPath }.map(\.pid)
+    print(realPIDs.isEmpty
+        ? "→ real Nudge not running: its window watch has nothing to watch (the hook audit still applies)"
+        : "→ real Nudge pid \(realPIDs.map(String.init).joined(separator: ",")): failing on any popover it shows")
 
     var tally: [Verdict: Int] = [:]
     var claudeRuns = 0
@@ -748,10 +764,13 @@ func runClaudeSuite(_ opts: Options) -> Never {
     let ctx = SuiteContext(opts: opts, instance: instance, claude: claude, peekaboo: peekaboo, artifacts: artifacts)
 
     for fx in fixtures {
-        if fx.respond == "click", peekaboo == nil {
-            print("SKIP         \(fx.name) — peekaboo not found (pass --peekaboo)")
-            tally[.skip, default: 0] += 1
-            continue
+        if fx.respond == "click" {
+            let why = peekaboo.map(peekabooNotReady) ?? "peekaboo not found (pass --peekaboo)"
+            if let why {
+                print("SKIP         \(fx.name) — \(why)")
+                tally[.skip, default: 0] += 1
+                continue
+            }
         }
         var final = Attempt()
         for n in 1...2 {
