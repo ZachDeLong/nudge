@@ -155,7 +155,7 @@ final class HookRun {
 
     /// The hook's pid when started `viaShell` (the shell echoes `$!` to stderr).
     var shellChildPID: pid_t? {
-        stderrText.split(separator: "\n").first.flatMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
+        stderrText.split(separator: "\n").lazy.compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }.first
     }
 
     /// Closes our end of the hook's stdout, as if the caller that would read
@@ -339,6 +339,12 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
         }
         if !waitUntil(3, { !hookAlive() }) {
             problems.append("hook still running 3s after its caller went away")
+        }
+        // exit(0) runs every atexit handler on the watcher thread: a crash
+        // there would also end the process, so require a clean exit.
+        if fx.respond == "reader-gone", !hook.isRunning,
+           hook.process.terminationReason != .exit || hook.process.terminationStatus != 0 {
+            problems.append("hook ended with \(hook.termination), expected exit 0")
         }
         let withdrawn = waitUntil(3) { ((try? instance.queue()) ?? []).allSatisfy { $0["id"] as? String != id } }
         if !withdrawn {

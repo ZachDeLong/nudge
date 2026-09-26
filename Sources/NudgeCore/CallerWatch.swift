@@ -51,7 +51,6 @@ public enum CallerWatch {
                 if getppid() != parent { return onGone() }
             }
         }
-        thread.stackSize = 64 * 1024
         thread.start()
     }
 }
