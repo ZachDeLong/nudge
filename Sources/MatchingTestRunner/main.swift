@@ -167,6 +167,60 @@ expect(
     "split: newline inside a subshell stays wrapped for peeling"
 )
 
+// MARK: splitBashCommand — heredocs and comments (regression)
+//
+// An apostrophe in a heredoc body or a # comment used to open a single quote
+// that never closed, swallowing every later line into one segment, so
+// `Bash(git push:*)` silently missed a push after `Don't forget...`.
+
+expect(
+    splitBashCommand("cat > NOTES.md <<'EOF'\nDon't forget to bump the version.\nEOF\ngit push origin main"),
+    ["cat > NOTES.md <<'EOF'", "Don't forget to bump the version.", "git push origin main"],
+    "split: apostrophe in a heredoc body doesn't open a quote"
+)
+expect(
+    splitBashCommand("cat <<EOF\nrm -rf foo\nEOF"),
+    ["cat <<EOF", "rm -rf foo"],
+    "split: heredoc body lines stay candidates"
+)
+expect(
+    splitBashCommand("cat <<-EOF\n\tit's here\n\tEOF\nrm x"),
+    ["cat <<-EOF", "it's here", "rm x"],
+    "split: <<- terminator may be tab-indented"
+)
+expect(
+    splitBashCommand("cat <<A <<'B'\na's\nA\nb's\nB\nls"),
+    ["cat <<A <<'B'", "a's", "b's", "ls"],
+    "split: two heredocs on one line"
+)
+expect(
+    splitBashCommand("x=$(cat <<'EOF'\nit's\nEOF\n) && rm foo"),
+    ["x=$(cat <<'EOF'\nit's\nEOF\n)", "rm foo"],
+    "split: heredoc inside $(...) stays in the substitution"
+)
+expect(
+    splitBashCommand("(cat <<EOF\nit's\nEOF\n); ls"),
+    ["(cat <<EOF\nit's\nEOF\n)", "ls"],
+    "split: heredoc inside a subshell stays wrapped"
+)
+expect(
+    splitBashCommand("cat <<EOF\nit's never closed"),
+    ["cat <<EOF", "it's never closed"],
+    "split: unterminated heredoc runs to the end"
+)
+expect(splitBashCommand("cat <<< 'hi' && ls"), ["cat <<< 'hi'", "ls"], "split: <<< is a here-string, not a heredoc")
+expect(splitBashCommand("echo $((1<<2)) && ls"), ["echo $((1<<2))", "ls"], "split: << inside arithmetic is a shift")
+expect(splitBashCommand("# Let's ship it\ngit push origin main"), ["git push origin main"], "split: apostrophe in a comment")
+expect(splitBashCommand("ls # don't\nrm foo"), ["ls", "rm foo"], "split: trailing comment")
+expect(splitBashCommand("echo foo#bar && ls"), ["echo foo#bar", "ls"], "split: # inside a word isn't a comment")
+expect(splitBashCommand("echo ${#x} $# && ls"), ["echo ${#x} $#", "ls"], "split: ${#x} and $# aren't comments")
+expect(splitBashCommand("echo '# not a comment' && ls"), ["echo '# not a comment'", "ls"], "split: quoted # isn't a comment")
+expect(
+    matchedPattern(toolName: "Bash", target: "cat > NOTES.md <<'EOF'\nDon't forget.\nEOF\ngit push origin main", patterns: ["Bash(git push:*)"]),
+    "Bash(git push:*)",
+    "match: git push after a heredoc with an apostrophe"
+)
+
 // MARK: bashCandidates — peel subshell/brace wrappers
 
 expect(

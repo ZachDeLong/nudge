@@ -18,7 +18,7 @@ Bash(git rebase)        # exact match
 
 Chained calls match too. The hook tokenizes commands on `&&`, `||`, `;`, `|`, `&`, and newlines (respecting quotes, `$(...)` substitutions, and `$((...))` arithmetic), then checks each segment. Subshell `(...)` and brace `{...;}` wrappers are peeled and re-checked. `Bash(git push:*)` fires on `cd ~/repo && git push`; `Bash(rm:*)` fires on `(rm -rf foo); ls` and on a multi-line block where `rm` is on line three.
 
-Newlines count as separators because Claude Code emits multi-line bash constantly. A `\` line continuation is not a separator — the continued line stays part of the same command. Heredoc bodies do get split, so writing a script that *contains* `rm -rf` can trigger an `rm` prompt. That's deliberate: the split errs toward an extra prompt rather than a missed one.
+Newlines count as separators because Claude Code emits multi-line bash constantly. A `\` line continuation is not a separator — the continued line stays part of the same command. Heredoc bodies are read as plain text, so an apostrophe in `Don't` can't hide the lines after it, and `#` comments are skipped. Each body line is still checked, though, so writing a script that *contains* `rm -rf` can trigger an `rm` prompt. That's deliberate: the split errs toward an extra prompt rather than a missed one.
 
 Spacing doesn't matter. `git  push` and `git<tab>push` both match `Bash(git push:*)`; runs of spaces and tabs are collapsed on both sides before comparing. Token boundaries still hold, so `git pushd` never matches `Bash(git push:*)`.
 

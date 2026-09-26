@@ -84,8 +84,12 @@ public func globMatch(path: String, glob: String) -> Bool {
 /// `Bash(rm:*)` never fired on `ls\nrm -rf foo`. A `\` line continuation is
 /// consumed by the escape branch above, so continued lines stay joined.
 ///
-/// Heredoc bodies do get split, which yields extra candidate segments. That errs
-/// toward more prompts, never fewer, so it's the safe direction to be wrong in.
+/// Heredoc bodies are read line by line with no quote tracking, since bash
+/// treats them as plain text: an apostrophe in `Don't` must not open a quote
+/// that swallows the rest of the command. At the top level each body line
+/// still becomes its own candidate segment, which errs toward more prompts,
+/// never fewer, so it's the safe direction to be wrong in. `#` comments are
+/// dropped for the same reason.
 public func splitBashCommand(_ command: String) -> [String] {
     var segments: [String] = []
     var current = ""
@@ -97,11 +101,96 @@ public func splitBashCommand(_ command: String) -> [String] {
     var arithDepth = 0       // tracks $(( ... )) so its inner && doesn't split
     var subshellDepth = 0    // tracks (cmd; cmd) — keep as one segment for peeling
     var braceDepth = 0       // tracks { cmd; } — same
+    var pendingHeredocs: [(delimiter: String, stripTabs: Bool)] = []
 
     func flush() {
         let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { segments.append(trimmed) }
         current = ""
+    }
+
+    /// True when the next character would start a new word, so `#` there
+    /// begins a comment rather than being part of a word like `foo#bar`.
+    func atWordStart() -> Bool {
+        guard let prev = current.last else { return true }
+        return prev.isWhitespace || ";&|(".contains(prev)
+    }
+
+    /// Reads the body of every heredoc opened on the line that just ended.
+    /// `start` is the index just past that line's newline. Returns the index
+    /// of the newline that ends the last terminator line, or endIndex.
+    func consumeHeredocBodies(from start: String.Index, nested: Bool) -> String.Index {
+        var pos = start
+        var resume = command.endIndex
+        for (n, doc) in pendingHeredocs.enumerated() {
+            resume = command.endIndex
+            while pos < command.endIndex {
+                let lineEnd = command[pos...].firstIndex(where: { $0.isNewline }) ?? command.endIndex
+                let line = String(command[pos..<lineEnd])
+                let compared = doc.stripTabs ? String(line.drop(while: { $0 == "\t" })) : line
+                let isTerminator = compared == doc.delimiter
+                if nested {
+                    current.append(contentsOf: line)
+                } else if !isTerminator {
+                    current = line
+                    flush()
+                }
+                if lineEnd == command.endIndex {
+                    pos = lineEnd
+                    break
+                }
+                if isTerminator {
+                    // The main loop handles the newline after the last
+                    // terminator; one between two bodies is ours to keep.
+                    resume = lineEnd
+                    if nested && n < pendingHeredocs.count - 1 { current.append(command[lineEnd]) }
+                    pos = command.index(after: lineEnd)
+                    break
+                }
+                if nested { current.append(command[lineEnd]) }
+                pos = command.index(after: lineEnd)
+            }
+        }
+        pendingHeredocs.removeAll()
+        return resume
+    }
+
+    /// Parses the delimiter after `<<` or `<<-`, appending the text it covers
+    /// to `current`. `start` is the index just past `<<`.
+    func readHeredocDelimiter(from start: String.Index) -> String.Index {
+        var pos = start
+        var stripTabs = false
+        if pos < command.endIndex && command[pos] == "-" {
+            stripTabs = true
+            current.append("-")
+            pos = command.index(after: pos)
+        }
+        while pos < command.endIndex && (command[pos] == " " || command[pos] == "\t") {
+            current.append(command[pos])
+            pos = command.index(after: pos)
+        }
+        var delimiter = ""
+        while pos < command.endIndex {
+            let ch = command[pos]
+            if ch == "'" || ch == "\"" {
+                guard let close = command[command.index(after: pos)...].firstIndex(of: ch) else { break }
+                delimiter.append(contentsOf: command[command.index(after: pos)..<close])
+                current.append(contentsOf: command[pos...close])
+                pos = command.index(after: close)
+                continue
+            }
+            if ch == "\\" {
+                current.append(ch)
+                pos = command.index(after: pos)
+                continue
+            }
+            if ch.isWhitespace || ";&|<>()".contains(ch) { break }
+            delimiter.append(ch)
+            current.append(ch)
+            pos = command.index(after: pos)
+        }
+        if !delimiter.isEmpty { pendingHeredocs.append((delimiter, stripTabs)) }
+        return pos
     }
 
     while i < command.endIndex {
@@ -136,6 +225,36 @@ public func splitBashCommand(_ command: String) -> [String] {
             if c == "`" { inBacktick = false }
             i = command.index(after: i)
             continue
+        }
+
+        if arithDepth == 0 {
+            // The line holding `<<EOF` ended: its heredoc bodies come next.
+            if c.isNewline && !pendingHeredocs.isEmpty {
+                let nested = dollarParenDepth > 0 || subshellDepth > 0 || braceDepth > 0
+                if nested { current.append(c) } else { flush() }
+                i = consumeHeredocBodies(from: command.index(after: i), nested: nested)
+                continue
+            }
+            if c == "<" {
+                let n1 = command.index(after: i)
+                if n1 < command.endIndex && command[n1] == "<" {
+                    let n2 = command.index(after: n1)
+                    if n2 < command.endIndex && command[n2] == "<" {
+                        // `<<<` here-string: not a heredoc.
+                        current.append(contentsOf: "<<<")
+                        i = command.index(after: n2)
+                        continue
+                    }
+                    current.append(contentsOf: "<<")
+                    i = readHeredocDelimiter(from: n2)
+                    continue
+                }
+            }
+            if c == "#" && atWordStart() {
+                // Comment: skip to the end of the line.
+                i = command[i...].firstIndex(where: { $0.isNewline }) ?? command.endIndex
+                continue
+            }
         }
 
         if c == "'" { inSingle = true; current.append(c); i = command.index(after: i); continue }

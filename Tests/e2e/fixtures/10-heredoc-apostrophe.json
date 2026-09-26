@@ -32,6 +32,5 @@
       "permissionDecision": "allow"
     }
   },
-  "expectExit": 0,
-  "knownFailure": "splitBashCommand treats the ' in the heredoc body (Don't) as an opening single quote that never closes, so the rest of the command, including line 4's git push, is swallowed into one segment starting with `cat` and the prefix never matches. Same with a # comment containing an apostrophe."
+  "expectExit": 0
 }
