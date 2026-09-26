@@ -51,6 +51,9 @@ guard let port = NudgeClient.locatePort() else {
 
 // MARK: - POST and wait
 
+// If Claude dies while we wait, stop holding the question open.
+CallerWatch.exitWhenCallerGone()
+
 let response: DecisionResponse
 do {
     response = try NudgeClient.postPrompt(prompt, to: "/ask", port: port)

@@ -1,7 +1,7 @@
 {
-  "description": "infix ignores backslash escapes and quote splicing: --for\\ce and --\"\"force both match",
+  "description": "Claude SIGKILLed (its end of the hook's stdout closes): the hook notices, exits, and the prompt is withdrawn",
   "patterns": [
-    "Bash(*--force*)"
+    "Bash(rm:*)"
   ],
   "payload": {
     "session_id": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
@@ -11,8 +11,8 @@
     "hook_event_name": "PreToolUse",
     "tool_name": "Bash",
     "tool_input": {
-      "command": "git push origin main --for\\ce && git push fork main --\"\"force",
-      "description": "Push to both remotes"
+      "command": "rm -rf node_modules && npm ci",
+      "description": "Clean reinstall"
     },
     "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
   },
@@ -22,16 +22,9 @@
     "cwd": "/Users/dev/code/api",
     "sessionId": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
     "permissionMode": "default",
-    "command": "git push origin main --for\\ce && git push fork main --\"\"force",
-    "matchedPattern": "Bash(*--force*)"
+    "command": "rm -rf node_modules && npm ci",
+    "matchedPattern": "Bash(rm:*)"
   },
-  "respond": "allow",
-  "expectStdout": {
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "permissionDecision": "allow",
-      "permissionDecisionReason": "Allowed in Nudge."
-    }
-  },
-  "expectExit": 0
+  "respond": "reader-gone",
+  "expectStdout": null
 }

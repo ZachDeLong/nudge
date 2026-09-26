@@ -28,7 +28,8 @@
   "expectStdout": {
     "hookSpecificOutput": {
       "hookEventName": "PreToolUse",
-      "permissionDecision": "deny"
+      "permissionDecision": "deny",
+      "permissionDecisionReason": "The user denied this in Nudge."
     }
   },
   "expectExit": 0

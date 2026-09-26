@@ -93,6 +93,9 @@ guard let port = NudgeClient.locatePort() else {
 
 // MARK: - POST and wait
 
+// If Claude dies while we wait, stop holding the prompt open.
+CallerWatch.exitWhenCallerGone()
+
 let decision: DecisionResponse
 do {
     decision = try NudgeClient.postPrompt(prompt, to: "/prompt", port: port)
@@ -115,10 +118,15 @@ guard decision.decision == .allow || decision.decision == .deny else {
 
 // MARK: - Write Claude Code hook output
 
+// Without a reason, Claude sees a denial as "hook error: Blocked by hook".
+// Claude Code shows the reason to Claude for deny and to the user for allow.
 let response: [String: Any] = [
     "hookSpecificOutput": [
         "hookEventName": "PreToolUse",
         "permissionDecision": decision.decision.rawValue,
+        "permissionDecisionReason": decision.decision == .deny
+            ? "The user denied this in Nudge."
+            : "Allowed in Nudge.",
     ]
 ]
 if let outputData = try? JSONSerialization.data(withJSONObject: response) {

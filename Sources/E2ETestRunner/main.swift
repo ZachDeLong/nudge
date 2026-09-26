@@ -94,8 +94,18 @@ final class HookRun {
     private var err = Data()
     private let lock = NSLock()
 
-    init(binDir: URL, instance: NudgeInstance, payload: Data) throws {
-        process.executableURL = binDir.appendingPathComponent("nudge-hook")
+    /// With `viaShell`, the hook runs as a background child of `sh`, so killing
+    /// `process` (the shell) orphans the hook while its stdout reader (us)
+    /// stays alive: the "parent died" path, isolated from "reader closed".
+    init(binDir: URL, instance: NudgeInstance, payload: Data, viaShell: Bool = false) throws {
+        let hookPath = binDir.appendingPathComponent("nudge-hook").path
+        if viaShell {
+            // An async list gets /dev/null as stdin, so hand it the real one on fd 3.
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", "exec 3<&0; \"$0\" <&3 3<&- & echo $! >&2; wait", hookPath]
+        } else {
+            process.executableURL = URL(fileURLWithPath: hookPath)
+        }
         process.environment = NudgeInstance.environment(configDir: instance.configDir, testAPI: false)
         let stdin = Pipe()
         process.standardInput = stdin
@@ -140,7 +150,38 @@ final class HookRun {
 
     func kill() {
         if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
+        if let pid = shellChildPID, Darwin.kill(pid, 0) == 0 { Darwin.kill(pid, SIGKILL) }
     }
+
+    /// The hook's pid when started `viaShell` (the shell echoes `$!` to stderr).
+    var shellChildPID: pid_t? {
+        stderrText.split(separator: "\n").first.flatMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
+    }
+
+    /// Closes our end of the hook's stdout, as if the caller that would read
+    /// the answer had died.
+    func closeReader() {
+        stdout.fileHandleForReading.readabilityHandler = nil
+        try? stdout.fileHandleForReading.close()
+    }
+}
+
+/// Total CPU time (user + system) a process has used, via `ps`.
+func cpuSeconds(pid: pid_t) -> Double? {
+    let ps = Process()
+    ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+    ps.arguments = ["-o", "time=", "-p", String(pid)]
+    let out = Pipe()
+    ps.standardOutput = out
+    ps.standardError = FileHandle.nullDevice
+    guard (try? ps.run()) != nil else { return nil }
+    ps.waitUntilExit()
+    // "M:SS.ss" or "H:MM:SS.ss"
+    let text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    let parts = text.split(separator: ":").compactMap { Double($0) }
+    guard !parts.isEmpty else { return nil }
+    return parts.reduce(0) { $0 * 60 + $1 }
 }
 
 // MARK: - Fixtures
@@ -157,7 +198,9 @@ struct Fixture {
     /// Fields the queued prompt must have; nil = nothing may be queued.
     let expectPrompt: [String: Any]?
     /// "allow" | "deny" answer it through the app; "hangup" SIGTERMs the hook
-    /// the way Claude Code does when the user stops waiting.
+    /// the way Claude Code does when the user stops waiting; "reader-gone"
+    /// closes the hook's stdout reader and "parent-killed" SIGKILLs its parent
+    /// shell, the two ways a SIGKILLed Claude leaves the hook behind.
     let respond: String?
     /// Exact hook stdout as JSON; nil = stdout must be empty.
     let expectStdout: Any?
@@ -190,8 +233,8 @@ struct Fixture {
         knownFailure = obj["knownFailure"] as? String
 
         if expectPrompt != nil {
-            guard let respond, ["allow", "deny", "hangup"].contains(respond) else {
-                throw FixtureError("\(name): expectPrompt needs respond = allow | deny | hangup")
+            guard let respond, ["allow", "deny", "hangup", "reader-gone", "parent-killed"].contains(respond) else {
+                throw FixtureError("\(name): expectPrompt needs respond = allow | deny | hangup | reader-gone | parent-killed")
             }
         }
     }
@@ -211,7 +254,8 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
 
     let hook: HookRun
     do {
-        hook = try HookRun(binDir: binDir, instance: instance, payload: fx.payload)
+        hook = try HookRun(binDir: binDir, instance: instance, payload: fx.payload,
+                           viaShell: fx.respond == "parent-killed")
     } catch {
         return ["couldn't start nudge-hook: \(error)"]
     }
@@ -270,6 +314,35 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
         }
         if !hook.stdoutText.isEmpty {
             problems.append("killed hook wrote stdout: \(describe(hook.stdoutText))")
+        }
+    case "reader-gone", "parent-killed":
+        // Claude SIGKILLed: nothing signals the hook (it has its own process
+        // group), so it has to notice on its own and exit.
+        // The watcher sleeps in kevent; a busy loop there would burn a core
+        // for as long as the user takes to answer.
+        let hookPID = fx.respond == "parent-killed" ? hook.shellChildPID : hook.process.processIdentifier
+        Thread.sleep(forTimeInterval: 1)
+        if let pid = hookPID, let cpu = cpuSeconds(pid: pid), cpu > 0.2 {
+            problems.append("hook used \(cpu)s of CPU in 1s of waiting (busy loop?)")
+        }
+        let hookAlive: () -> Bool
+        if fx.respond == "reader-gone" {
+            hook.closeReader()
+            hookAlive = { hook.isRunning }
+        } else {
+            guard let pid = hook.shellChildPID else {
+                problems.append("couldn't learn the hook's pid from the wrapper shell")
+                return problems
+            }
+            Darwin.kill(hook.process.processIdentifier, SIGKILL) // the shell only; the hook is orphaned
+            hookAlive = { Darwin.kill(pid, 0) == 0 }
+        }
+        if !waitUntil(3, { !hookAlive() }) {
+            problems.append("hook still running 3s after its caller went away")
+        }
+        let withdrawn = waitUntil(3) { ((try? instance.queue()) ?? []).allSatisfy { $0["id"] as? String != id } }
+        if !withdrawn {
+            problems.append("prompt \(id) still queued after its caller went away (should be withdrawn)")
         }
     default:
         let decision = fx.respond!

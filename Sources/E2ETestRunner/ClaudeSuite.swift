@@ -66,8 +66,8 @@ struct ClaudeFixture {
         commitFiles = obj["commitFiles"] as? Bool ?? false
         guard let prompt = obj["prompt"] as? String else { throw FixtureError("\(name): missing prompt") }
         self.prompt = prompt
-        guard let respond = obj["respond"] as? String, ["allow", "deny", "click", "kill"].contains(respond) else {
-            throw FixtureError("\(name): respond must be allow | deny | click | kill")
+        guard let respond = obj["respond"] as? String, ["allow", "deny", "click", "kill", "kill9"].contains(respond) else {
+            throw FixtureError("\(name): respond must be allow | deny | click | kill | kill9")
         }
         self.respond = respond
         expectPrompt = obj["expectPrompt"] as? [String: Any] ?? [:]
@@ -540,13 +540,15 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
                     }
                 }
                 answeredAt = Date()
-            case "kill" where first:
-                run.process.terminate() // SIGTERM, like closing the terminal or `kill`
+            case "kill" where first, "kill9" where first:
+                // SIGTERM is closing the terminal or `kill`; SIGKILL is a crash
+                // or `kill -9`, where Claude Code gets no chance to clean up.
+                kill(run.process.processIdentifier, fx.respond == "kill9" ? SIGKILL : SIGTERM)
                 killedAt = Date()
             default:
                 // Allow for allow/click, deny for deny/kill: a retry after a
                 // deny gets denied too, and extras after a click are allowed.
-                let decision = (fx.respond == "deny" || fx.respond == "kill") ? "deny" : "allow"
+                let decision = ["deny", "kill", "kill9"].contains(fx.respond) ? "deny" : "allow"
                 if (try? instance.resolve(id: id, decision: decision)) != 200 {
                     a.problems.append("resolve(\(decision)) for prompt \(id) didn't return 200")
                 }
@@ -591,7 +593,7 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
     var timing = String(format: "claude ran %.1fs", a.seconds)
     if let f = firstPromptAt { timing += String(format: ", prompt queued at %.1fs", f.timeIntervalSince(run.started)) }
     if let ans = answeredAt { timing += String(format: ", claude exited %.1fs after the answer", endedAt.timeIntervalSince(ans)) }
-    if let w = withdrawnAfter { timing += String(format: ", prompt withdrawn %.2fs after SIGTERM", w) }
+    if let w = withdrawnAfter { timing += String(format: ", prompt withdrawn %.2fs after %@", w, fx.respond == "kill9" ? "SIGKILL" : "SIGTERM") }
     timing += String(format: ", $%.4f", a.cost)
     a.info.append(timing)
     let commands = t.toolUses.map { "\($0.name): \($0.command.isEmpty ? describe($0.input) : describe($0.command))" }
@@ -669,11 +671,11 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
         } else {
             a.problems.append("no tool result for the denied push in the transcript")
         }
-    case "kill":
+    case "kill", "kill9":
         if remoteAfter != remoteBefore {
             a.problems.append("remote main moved \(remoteBefore ?? "?") → \(remoteAfter ?? "?") though claude was killed before answering")
         }
-        a.info.append("claude \(run.process.terminationReason == .uncaughtSignal ? "died of signal" : "exited") \(run.process.terminationStatus) after SIGTERM")
+        a.info.append("claude \(run.process.terminationReason == .uncaughtSignal ? "died of signal" : "exited") \(run.process.terminationStatus) after \(fx.respond == "kill9" ? "SIGKILL" : "SIGTERM")")
     default:
         break
     }
