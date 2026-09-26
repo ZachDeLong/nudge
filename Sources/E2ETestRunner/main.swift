@@ -13,8 +13,10 @@
 //
 // Fixtures (Tests/e2e/fixtures/*.json) are driver-agnostic on purpose: the
 // payload is what Claude Code sends, the expectations are what Nudge and the
-// hook should do with it. A later layer can swap `runHook` for a real
-// `claude -p` session and keep the same app-side assertions.
+// hook should do with it.
+//
+// `--claude` switches to layer 2 (ClaudeSuite.swift, `make e2e-claude`): real
+// `claude -p` sessions instead of recorded payloads.
 
 import Darwin
 import Foundation
@@ -24,8 +26,15 @@ import Foundation
 struct Options {
     var binDir: URL
     var fixturesDir = URL(fileURLWithPath: "Tests/e2e/fixtures")
+    var fixturesDirGiven = false
     var keepTempDir = false
     var filters: [String] = []
+    // Layer 2 (`--claude`) only.
+    var claude = false
+    var model = "haiku"
+    var claudeBin: String?
+    var peekabooBin: String?
+    var artifactsDir: URL?
 }
 
 func parseOptions() -> Options {
@@ -42,10 +51,30 @@ func parseOptions() -> Options {
         case "--fixtures":
             guard let v = args.next() else { die("--fixtures needs a value") }
             opts.fixturesDir = URL(fileURLWithPath: v)
+            opts.fixturesDirGiven = true
         case "--keep":
             opts.keepTempDir = true
+        case "--claude":
+            opts.claude = true
+        case "--model":
+            guard let v = args.next() else { die("--model needs a value") }
+            opts.model = v
+        case "--claude-bin":
+            guard let v = args.next() else { die("--claude-bin needs a value") }
+            opts.claudeBin = v
+        case "--peekaboo":
+            guard let v = args.next() else { die("--peekaboo needs a value") }
+            opts.peekabooBin = v
+        case "--artifacts":
+            guard let v = args.next() else { die("--artifacts needs a value") }
+            opts.artifactsDir = URL(fileURLWithPath: v)
         case "-h", "--help":
-            print("usage: nudge-test-e2e [--bin-dir DIR] [--fixtures DIR] [--keep] [name-filter...]")
+            print("""
+            usage: nudge-test-e2e [--bin-dir DIR] [--fixtures DIR] [--keep] [name-filter...]
+                   nudge-test-e2e --claude [--bin-dir DIR] [--fixtures DIR] [--keep]
+                                  [--model NAME] [--claude-bin PATH] [--peekaboo PATH]
+                                  [--artifacts DIR] [name-filter...]
+            """)
             exit(0)
         default:
             opts.filters.append(arg)
@@ -290,6 +319,9 @@ for bin in ["Nudge", "nudge-hook"] where !FileManager.default.isExecutableFile(a
 }
 guard ProcessInfo.processInfo.environment["NUDGE_CONFIG_DIR"] == nil else {
     die("unset NUDGE_CONFIG_DIR; the harness makes its own")
+}
+if opts.claude {
+    runClaudeSuite(opts)
 }
 
 let fixtureURLs = ((try? FileManager.default.contentsOfDirectory(at: opts.fixturesDir, includingPropertiesForKeys: nil)) ?? [])
