@@ -66,7 +66,7 @@ Click the menu bar icon when there's no prompt up, or right-click it to get the 
 
 A few things the panel doesn't tell you:
 
-- **⏎ / esc from any app** needs Accessibility access. The build is unsigned, so macOS forgets that grant after every update. Remove Nudge from the list and add it back. Keys are ignored for the first 0.6s a prompt is up, so you won't approve something by accident while typing.
+- **⏎ / esc from any app** needs Accessibility access: System Settings → Privacy & Security → Accessibility, which macOS 27 renamed Device Control and Data Access. The Enable… button in the panel opens it. The build is unsigned, so macOS forgets that grant after every update. Remove Nudge from the list and add it back. Keys are ignored for the first 0.6s a prompt is up, so you won't approve something by accident while typing.
 - **Quit means quit.** The hooks won't relaunch Nudge until you open it yourself. If it crashes, it comes back on the next hook call.
 
 ## nudge-ask
