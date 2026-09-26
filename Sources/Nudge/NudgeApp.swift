@@ -20,6 +20,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        // A relocated config dir means a test harness launched us: go when it
+        // does, even if it was SIGKILLed before it could clean up. A normal
+        // launch (from launchd) never has the override.
+        if ConfigDir.isOverridden {
+            CallerWatch.exitWhenCallerGone()
+        }
+
         // Dev mode: render popover states to PNG and exit. Runs before the
         // server or status item exist, so it never disturbs a live Nudge.
         if let dir = PreviewRenderer.requestedDirectory() {
