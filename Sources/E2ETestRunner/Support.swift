@@ -30,6 +30,56 @@ func waitUntil(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
     return condition()
 }
 
+/// True when something accepts TCP connections on 127.0.0.1:`port`.
+func portAnswers(_ port: UInt16) -> Bool {
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    guard fd >= 0 else { return false }
+    defer { close(fd) }
+    var addr = sockaddr_in()
+    addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    addr.sin_family = sa_family_t(AF_INET)
+    addr.sin_port = port.bigEndian
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+    return withUnsafePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+        }
+    }
+}
+
+/// Removes temp dirs left by runs killed before they could clean up. Only
+/// ours, only older than 30 minutes, and only when nothing answers on the
+/// dir's port: anything newer may belong to a run that's still going.
+func sweepStaleTempDirs() {
+    let fm = FileManager.default
+    let tmp = URL(fileURLWithPath: "/tmp").resolvingSymlinksInPath()
+    guard let names = try? fm.contentsOfDirectory(atPath: tmp.path) else { return }
+    let cutoff = Date().addingTimeInterval(-30 * 60)
+    for name in names where name.hasPrefix("nudge-e2e.") || name.hasPrefix("nudge-e2e-claude.") {
+        let dir = tmp.appendingPathComponent(name)
+        guard let attrs = try? fm.attributesOfItem(atPath: dir.path),
+              (attrs[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
+              let modified = attrs[.modificationDate] as? Date, modified < cutoff
+        else { continue }
+        if let p = try? String(contentsOf: dir.appendingPathComponent("port"), encoding: .utf8),
+           let port = UInt16(p.trimmingCharacters(in: .whitespacesAndNewlines)), portAnswers(port) {
+            continue
+        }
+        try? fm.removeItem(at: dir)
+    }
+}
+
+/// A config dir like one a forgotten NUDGE_CONFIG_DIR would point at after
+/// its Nudge is gone: patterns and prefs, but nothing listening on its port.
+func makeStaleConfigDir(patterns: [String]) throws -> URL {
+    let dir = URL(fileURLWithPath: try makeTempDir("/tmp/nudge-e2e.XXXXXX"), isDirectory: true)
+    try (patterns.joined(separator: "\n") + "\n").write(to: dir.appendingPathComponent("patterns.txt"), atomically: true, encoding: .utf8)
+    try #"{"enabled":true,"skipWhenTerminalFocused":false}"#.write(to: dir.appendingPathComponent("prefs.json"), atomically: true, encoding: .utf8)
+    // Port 1 (tcpmux) is closed on any normal Mac.
+    try "1\n".write(to: dir.appendingPathComponent("port"), atomically: true, encoding: .utf8)
+    return dir
+}
+
 // MARK: - Isolated Nudge instance
 
 /// A Nudge app launched on its own temp config dir, normally with the test

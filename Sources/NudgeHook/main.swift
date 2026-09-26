@@ -3,6 +3,22 @@ import Foundation
 import NudgeCore
 import NudgeHookCore
 
+// NUDGE_CONFIG_DIR is for the test harness. Left exported in a shell, it
+// points the hook at a Nudge that isn't there and prompting silently stops;
+// say so in Claude Code instead (systemMessage is shown to the user).
+func exitWithConfigDirWarning(_ problem: String) -> Never {
+    let message = "Nudge is off for this session: NUDGE_CONFIG_DIR is set to \(ConfigDir.url.path), \(problem). "
+        + "It's only for Nudge's test harness; unset it to get Nudge prompts back."
+    if let data = try? JSONSerialization.data(withJSONObject: ["systemMessage": message]) {
+        FileHandle.standardOutput.write(data)
+    }
+    exit(0)
+}
+
+if ConfigDir.isOverridden, !FileManager.default.fileExists(atPath: ConfigDir.url.path) {
+    exitWithConfigDirWarning("which doesn't exist")
+}
+
 // Re-read prefs.json on every invocation so the menu bar app's toggles take
 // effect immediately.
 let settings = Prefs.load()
@@ -88,6 +104,7 @@ let prompt = Prompt(
 )
 
 guard let port = NudgeClient.locatePort() else {
+    if ConfigDir.isOverridden { exitWithConfigDirWarning("but no Nudge is running there") }
     exit(0) // Nudge not available: fall back to Claude's terminal prompt.
 }
 

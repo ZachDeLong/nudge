@@ -97,7 +97,7 @@ final class HookRun {
     /// With `viaShell`, the hook runs as a background child of `sh`, so killing
     /// `process` (the shell) orphans the hook while its stdout reader (us)
     /// stays alive: the "parent died" path, isolated from "reader closed".
-    init(binDir: URL, instance: NudgeInstance, payload: Data, viaShell: Bool = false) throws {
+    init(binDir: URL, instance: NudgeInstance, payload: Data, viaShell: Bool = false, configDir: URL? = nil) throws {
         let hookPath = binDir.appendingPathComponent("nudge-hook").path
         if viaShell {
             // An async list gets /dev/null as stdin, so hand it the real one on fd 3.
@@ -106,7 +106,7 @@ final class HookRun {
         } else {
             process.executableURL = URL(fileURLWithPath: hookPath)
         }
-        process.environment = NudgeInstance.environment(configDir: instance.configDir, testAPI: false)
+        process.environment = NudgeInstance.environment(configDir: configDir ?? instance.configDir, testAPI: false)
         let stdin = Pipe()
         process.standardInput = stdin
         process.standardOutput = stdout
@@ -207,6 +207,11 @@ struct Fixture {
     let expectExit: Int32
     /// Set when the case asserts what *should* happen but currently doesn't.
     let knownFailure: String?
+    /// Points the hook somewhere other than the running instance: "missing"
+    /// (a dir that doesn't exist) or "stale" (a dir with patterns but no Nudge
+    /// listening), as a forgotten NUDGE_CONFIG_DIR would. "{hookConfigDir}"
+    /// in expectStdout strings becomes that path.
+    let hookConfigDir: String?
 
     init(url: URL) throws {
         name = url.deletingPathExtension().lastPathComponent
@@ -231,6 +236,10 @@ struct Fixture {
         expectStdout = stdout is NSNull ? nil : stdout
         expectExit = (obj["expectExit"] as? NSNumber)?.int32Value ?? 0
         knownFailure = obj["knownFailure"] as? String
+        hookConfigDir = obj["hookConfigDir"] as? String
+        if let h = hookConfigDir, !["missing", "stale"].contains(h) {
+            throw FixtureError("\(name): hookConfigDir must be missing | stale")
+        }
 
         if expectPrompt != nil {
             guard let respond, ["allow", "deny", "hangup", "reader-gone", "parent-killed"].contains(respond) else {
@@ -252,10 +261,25 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
         return ["couldn't write patterns: \(error)"]
     }
 
+    var hookConfigDir: URL?
+    switch fx.hookConfigDir {
+    case "missing":
+        hookConfigDir = URL(fileURLWithPath: instance.configDir.path + "-missing")
+    case "stale":
+        do {
+            hookConfigDir = try makeStaleConfigDir(patterns: fx.patterns)
+        } catch {
+            return ["couldn't make the stale config dir: \(error)"]
+        }
+    default:
+        break
+    }
+    defer { if fx.hookConfigDir == "stale", let d = hookConfigDir { try? FileManager.default.removeItem(at: d) } }
+
     let hook: HookRun
     do {
         hook = try HookRun(binDir: binDir, instance: instance, payload: fx.payload,
-                           viaShell: fx.respond == "parent-killed")
+                           viaShell: fx.respond == "parent-killed", configDir: hookConfigDir)
     } catch {
         return ["couldn't start nudge-hook: \(error)"]
     }
@@ -282,7 +306,7 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
         if !hook.finish(within: 5) {
             problems.append("hook still running after 5s with nothing to answer")
         }
-        checkOutput(fx, hook, into: &problems)
+        checkOutput(fx, hook, hookConfigDir: hookConfigDir, into: &problems)
         return problems
     }
 
@@ -362,7 +386,7 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
             problems.append("hook still waiting 5s after the \(decision) was sent")
             return problems
         }
-        checkOutput(fx, hook, into: &problems)
+        checkOutput(fx, hook, hookConfigDir: hookConfigDir, into: &problems)
         if let left = try? instance.queue(), !left.isEmpty {
             problems.append("queue not empty after answering: \(left.count) left")
         }
@@ -370,13 +394,26 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
     return problems
 }
 
-func checkOutput(_ fx: Fixture, _ hook: HookRun, into problems: inout [String]) {
+/// `value` with `placeholder` replaced by `replacement` in every string inside it.
+func substitute(_ placeholder: String, with replacement: String, in value: Any) -> Any {
+    switch value {
+    case let s as String: return s.replacingOccurrences(of: placeholder, with: replacement)
+    case let a as [Any]: return a.map { substitute(placeholder, with: replacement, in: $0) }
+    case let d as [String: Any]: return d.mapValues { substitute(placeholder, with: replacement, in: $0) }
+    default: return value
+    }
+}
+
+func checkOutput(_ fx: Fixture, _ hook: HookRun, hookConfigDir: URL? = nil, into problems: inout [String]) {
     guard !hook.isRunning else { return }
     if hook.process.terminationReason != .exit || hook.process.terminationStatus != fx.expectExit {
         problems.append("hook: expected exit \(fx.expectExit), got \(hook.termination)")
     }
     let text = hook.stdoutText
-    if let expected = fx.expectStdout {
+    if var expected = fx.expectStdout {
+        if let dir = hookConfigDir {
+            expected = substitute("{hookConfigDir}", with: dir.path, in: expected)
+        }
         guard let got = try? JSONSerialization.jsonObject(with: Data(text.utf8)) else {
             problems.append("hook stdout: expected \(describe(expected)), got non-JSON \(describe(text))")
             return
@@ -393,6 +430,7 @@ func checkOutput(_ fx: Fixture, _ hook: HookRun, into problems: inout [String]) 
 
 setvbuf(Darwin.stdout, nil, _IOLBF, 0)
 let opts = parseOptions()
+sweepStaleTempDirs()
 for bin in ["Nudge", "nudge-hook"] where !FileManager.default.isExecutableFile(atPath: opts.binDir.appendingPathComponent(bin).path) {
     die("\(bin) not found in \(opts.binDir.path) — build first (make e2e does)")
 }
