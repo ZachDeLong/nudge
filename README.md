@@ -6,7 +6,7 @@ When Claude stops to ask before running something (a `git push --force`, an edit
 
 It's a quality-of-life tool, not a security tool. Nudge only steps in for tool calls that match patterns you've listed, and everything else goes through Claude Code's normal flow.
 
-![Permission popover](./docs/img/permission.png)
+![Nudge asking to allow a git push, under its menu bar icon](./docs/img/hero.png)
 
 ## What's in the box
 
@@ -62,7 +62,7 @@ Mcp(playwright__*)      # every tool on an MCP server
 
 Click the menu bar icon when there's no prompt up, or right-click it to get the same toggles as a menu.
 
-![Settings popover](./docs/img/settings.png)
+![Nudge's settings panel](./docs/img/settings.png)
 
 A few things the panel doesn't tell you:
 
@@ -71,7 +71,7 @@ A few things the panel doesn't tell you:
 
 ## nudge-ask
 
-![Ask popover](./docs/img/ask.png)
+![A question from Claude in Nudge's ask popover](./docs/img/ask.png)
 
 ```sh
 /Applications/Nudge.app/Contents/MacOS/nudge-ask "Which deployment target?"
@@ -97,9 +97,9 @@ nudge-claude prune [days] # clean up ended sessions (default 7 days)
 
 Detach with `Ctrl-b d`. Claude keeps working, and the menu bar panel lets you pick a session, see what it's doing (thinking, using a tool, waiting, idle), read the transcript, and send replies. Replies are pasted into the tmux pane, so Claude keeps its cwd, skills, MCPs, and hooks.
 
-![Agent sessions popover](./docs/img/agent-sessions.png)
+![A mirrored Claude session in the menu bar panel](./docs/img/agent-sessions.png)
 
-Nudge only mirrors sessions it started. It can't attach to a terminal tab that's already open. Set `NUDGE_TMUX_PATH` if tmux isn't somewhere Homebrew would put it.
+Nudge only mirrors sessions it started. It can't attach to a terminal tab that's already open. Set `NUDGE_TMUX_PATH` if tmux isn't somewhere Homebrew would put it. If your Claude setup reads files from `~/Documents` (a `CLAUDE.md` import, say), macOS asks once whether `nudge-claude` may access that folder; allow it, or sessions start without those files.
 
 ## Updating
 
