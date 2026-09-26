@@ -1,0 +1,22 @@
+{
+  "description": "Claude commits and pushes; a real click on the harness popover's Allow button (via Peekaboo) lands the push",
+  "patterns": [
+    "Bash(git push:*)"
+  ],
+  "files": {
+    "hello.txt": "hello from the nudge e2e harness\n"
+  },
+  "prompt": "Use the Bash tool to run these two commands, verbatim, as two separate Bash calls, in this order:\n\n1. git add hello.txt && git commit -m add-hello\n2. git push origin main\n\nDo not run anything else and do not look around the repository first. If a command fails or is denied, do not retry it and do not try an alternative; stop and reply with one short line saying what happened.",
+  "respond": "click",
+  "expectPrompt": {
+    "tool": "Bash",
+    "kind": null,
+    "permissionMode": "default",
+    "matchedPattern": "Bash(git push:*)"
+  },
+  "expectCommandContains": [
+    "git push"
+  ],
+  "expectRemote": "pushed",
+  "timeoutSeconds": 150
+}

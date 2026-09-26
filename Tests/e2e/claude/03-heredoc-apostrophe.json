@@ -1,0 +1,22 @@
+{
+  "description": "a heredoc with an apostrophe, then git push, in one Bash call still routes to Nudge (541bcd6)",
+  "patterns": [
+    "Bash(git push:*)"
+  ],
+  "files": {},
+  "prompt": "Use the Bash tool to run the following as ONE single Bash call: all four lines together in the same command, copied exactly, including the apostrophe in \"Don't\". Do not split it into separate calls and do not use echo or printf instead of the heredoc.\n\ncat > NOTES.md <<'EOF'\nDon't forget to bump the version.\nEOF\ngit add NOTES.md && git commit -m notes && git push origin main\n\nDo not run anything else and do not look around the repository first. If a command fails or is denied, do not retry it and do not try an alternative; stop and reply with one short line saying what happened.",
+  "respond": "allow",
+  "expectPrompt": {
+    "tool": "Bash",
+    "kind": null,
+    "permissionMode": "default",
+    "matchedPattern": "Bash(git push:*)"
+  },
+  "expectCommandContains": [
+    "<<'EOF'",
+    "Don't forget",
+    "git push origin main"
+  ],
+  "expectRemote": "pushed",
+  "timeoutSeconds": 150
+}
