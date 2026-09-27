@@ -642,6 +642,17 @@ expect(HookAgent.codex.hostAppBundleIDs.contains("com.openai.codex"), true, "pro
 expect(HookAgent.claude.hostAppBundleIDs.isEmpty, true, "protocol: for Claude Code only the terminal list counts as its own UI")
 
 expect(HookEvent(rawValue: "PermissionRequest"), .permissionRequest, "protocol: event name parses")
+
+// Mode policy: PermissionRequest everywhere it fires but dontAsk; patterns
+// everywhere but bypassPermissions.
+for mode in ["default", "acceptEdits", "plan", "auto", "bypassPermissions"] {
+    expect(nudgeAsks(event: .permissionRequest, permissionMode: mode), true, "mode: PermissionRequest asks in \(mode)")
+}
+expect(nudgeAsks(event: .permissionRequest, permissionMode: "dontAsk"), false, "mode: PermissionRequest stays quiet in dontAsk")
+for mode in ["default", "acceptEdits", "plan", "auto", "dontAsk"] {
+    expect(nudgeAsks(event: .preToolUse, permissionMode: mode), true, "mode: patterns ask in \(mode)")
+}
+expect(nudgeAsks(event: .preToolUse, permissionMode: "bypassPermissions"), false, "mode: patterns stay quiet in bypassPermissions")
 expect(toolsLeftToAgentUI.contains("ExitPlanMode"), true, "protocol: plan approval stays in Claude's own UI")
 
 expect(displayTarget(toolName: "Bash", input: ["command": "mkdir build", "description": "Make dir"]), "mkdir build", "display: Bash shows the command")

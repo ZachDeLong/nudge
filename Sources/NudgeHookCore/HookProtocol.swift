@@ -52,6 +52,23 @@ public enum HookEvent: String, Sendable {
     case permissionRequest = "PermissionRequest"
 }
 
+/// Whether Nudge asks for `event` in Claude Code's `permissionMode`.
+///
+/// - PermissionRequest: in every mode it fires in, so auto mode's rare
+///   fallbacks (ask rules, the classifier giving up) still reach you. Not in
+///   dontAsk: that mode denies anything not pre-approved instead of asking,
+///   and a popover would contradict it. (Claude Code 2.1.283 doesn't fire
+///   PermissionRequest in dontAsk at all; this holds if that changes.)
+/// - PreToolUse (patterns): in every mode except bypassPermissions, where
+///   you turned permission checks off. Patterns are the "ask me even when
+///   Claude wouldn't" list, so auto and dontAsk keep them.
+public func nudgeAsks(event: HookEvent, permissionMode: String) -> Bool {
+    switch event {
+    case .permissionRequest: return permissionMode != "dontAsk"
+    case .preToolUse: return permissionMode != "bypassPermissions"
+    }
+}
+
 /// Tools whose approval dialog is a choice between workflows rather than a
 /// yes/no permission (Claude's plan approval offers several ways to proceed).
 /// Answering them with a bare Allow would pick one silently, so they stay in
