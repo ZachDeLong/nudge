@@ -1,0 +1,44 @@
+{
+  "description": "Codex apply_patch (read-only sandbox) shows the whole patch, relative paths and all",
+  "patterns": [],
+  "args": [
+    "--agent",
+    "codex"
+  ],
+  "payload": {
+    "session_id": "01a0e077-a652-7db0-a373-2832df895842",
+    "turn_id": "01a0e077-a66b-7f73-86ec-073a3d020b42",
+    "transcript_path": null,
+    "cwd": "/Users/dev/code/api",
+    "hook_event_name": "PermissionRequest",
+    "model": "gpt-6-luna",
+    "permission_mode": "default",
+    "tool_name": "apply_patch",
+    "tool_input": {
+      "command": "*** Begin Patch\n*** Add File: notes.txt\n+hello\n*** Update File: hello.txt\n@@\n-hello\n+hello world\n*** End Patch"
+    }
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "apply_patch",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "01a0e077-a652-7db0-a373-2832df895842",
+    "permissionMode": "default",
+    "command": "*** Begin Patch\n*** Add File: notes.txt\n+hello\n*** Update File: hello.txt\n@@\n-hello\n+hello world\n*** End Patch",
+    "matchedPattern": null,
+    "event": "PermissionRequest",
+    "detail": null,
+    "agent": "codex",
+    "subagentId": null
+  },
+  "respond": "allow",
+  "expectStdout": {
+    "hookSpecificOutput": {
+      "hookEventName": "PermissionRequest",
+      "decision": {
+        "behavior": "allow"
+      }
+    }
+  },
+  "expectExit": 0
+}

@@ -1,0 +1,46 @@
+{
+  "description": "Codex asks to leave the sandbox (on-request): its justification is the prompt's detail, and Deny reaches Codex with the reason",
+  "patterns": [],
+  "args": [
+    "--agent",
+    "codex"
+  ],
+  "payload": {
+    "session_id": "01a0e077-a652-7db0-a373-2832df895841",
+    "turn_id": "01a0e077-a66b-7f73-86ec-073a3d020b41",
+    "transcript_path": null,
+    "cwd": "/Users/dev/code/api",
+    "hook_event_name": "PermissionRequest",
+    "model": "gpt-6-luna",
+    "permission_mode": "default",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "curl -sS -o /dev/null -w '%{http_code}' https://example.com",
+      "description": "May I run this exact curl command with network access?"
+    }
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "01a0e077-a652-7db0-a373-2832df895841",
+    "permissionMode": "default",
+    "command": "curl -sS -o /dev/null -w '%{http_code}' https://example.com",
+    "matchedPattern": null,
+    "event": "PermissionRequest",
+    "detail": "May I run this exact curl command with network access?",
+    "agent": "codex",
+    "subagentId": null
+  },
+  "respond": "deny",
+  "expectStdout": {
+    "hookSpecificOutput": {
+      "hookEventName": "PermissionRequest",
+      "decision": {
+        "behavior": "deny",
+        "message": "The user denied this in Nudge."
+      }
+    }
+  },
+  "expectExit": 0
+}

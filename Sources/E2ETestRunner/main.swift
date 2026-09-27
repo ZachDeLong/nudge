@@ -1,9 +1,9 @@
 // End-to-end harness, layer 1: recorded Claude Code PreToolUse and
-// PermissionRequest payloads go into the real `nudge-hook` binary (and, for
-// what follows a dialog answered in Claude, `nudge-agent-hook`), against a
-// real Nudge app, and each case asserts what actually happened — was a
-// prompt queued (tool, command, matched pattern), and what did the hook hand
-// back to Claude Code.
+// PermissionRequest payloads (and Codex's, with `--agent codex`) go into the
+// real `nudge-hook` binary (and, for what follows a dialog answered in
+// Claude or a stopped Codex turn, `nudge-agent-hook`), against a real Nudge
+// app, and each case asserts what actually happened — was a prompt queued
+// (tool, command, matched pattern), and what did the hook hand back.
 //
 // No LLM, no screenshots, no clicks. The harness launches its own Nudge with
 // NUDGE_CONFIG_DIR pointing at a temp dir (own port, token, patterns, prefs)
@@ -100,16 +100,19 @@ final class HookRun {
     /// `process` (the shell) orphans the hook while its stdout reader (us)
     /// stays alive: the "parent died" path, isolated from "reader closed".
     init(binDir: URL, instance: NudgeInstance, payload: Data, viaShell: Bool = false, configDir: URL? = nil,
-         binary: String = "nudge-hook") throws {
+         binary: String = "nudge-hook", arguments: [String] = [], extraEnv: [String: String] = [:]) throws {
         let hookPath = binDir.appendingPathComponent(binary).path
         if viaShell {
             // An async list gets /dev/null as stdin, so hand it the real one on fd 3.
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", "exec 3<&0; \"$0\" <&3 3<&- & echo $! >&2; wait", hookPath]
+            process.arguments = ["-c", "exec 3<&0; \"$0\" \"$@\" <&3 3<&- & echo $! >&2; wait", hookPath] + arguments
         } else {
             process.executableURL = URL(fileURLWithPath: hookPath)
+            process.arguments = arguments
         }
-        process.environment = NudgeInstance.environment(configDir: configDir ?? instance.configDir, testAPI: false)
+        var env = NudgeInstance.environment(configDir: configDir ?? instance.configDir, testAPI: false)
+        env.merge(extraEnv) { _, new in new }
+        process.environment = env
         let stdin = Pipe()
         process.standardInput = stdin
         process.standardOutput = stdout
@@ -203,9 +206,14 @@ func payloadData(_ value: Any?, _ what: String) throws -> Data {
     }
 }
 
-/// One hook call: what Claude Code sends, and what should come of it.
+/// One hook call: what the agent sends, and what should come of it.
 struct Step {
     let payload: Data
+    /// Extra arguments for nudge-hook, e.g. ["--agent", "codex"] as Codex's
+    /// hook entry passes them.
+    let args: [String]
+    /// Extra environment for nudge-hook (NUDGE_HOOK_MAX_WAIT, say).
+    let env: [String: String]
     /// Fields the queued prompt must have; nil = nothing may be queued.
     let expectPrompt: [String: Any]?
     /// "allow" | "deny" answer it through the app; "hangup" SIGTERMs the hook
@@ -214,8 +222,13 @@ struct Step {
     /// "parent-killed" SIGKILLs its parent shell, the two ways a SIGKILLed
     /// Claude leaves the hook behind; "agent-event" runs nudge-agent-hook
     /// with `agentEvent` while the prompt is up, as Claude does after you
-    /// answer its own dialog.
+    /// answer its own dialog; "wait" answers nothing, and the hook must give
+    /// up on its own within `waitSeconds`, withdrawing the prompt.
     let respond: String?
+    /// With respond "agent-event": extra arguments for nudge-agent-hook.
+    let agentArgs: [String]
+    /// With respond "wait": how long the hook may take to give up.
+    let waitSeconds: TimeInterval
     /// Exact hook stdout as JSON; nil = stdout must be empty.
     let expectStdout: Any?
     let expectExit: Int32
@@ -228,6 +241,10 @@ struct Step {
 
     init(_ obj: [String: Any], context: String) throws {
         payload = try payloadData(obj["payload"], "\(context): payload")
+        args = obj["args"] as? [String] ?? []
+        env = obj["env"] as? [String: String] ?? [:]
+        agentArgs = obj["agentArgs"] as? [String] ?? []
+        waitSeconds = (obj["waitSeconds"] as? NSNumber)?.doubleValue ?? 10
         expectPrompt = obj["expectPrompt"] as? [String: Any]
         respond = obj["respond"] as? String
         let stdout = obj["expectStdout"]
@@ -236,7 +253,7 @@ struct Step {
         agentEvent = obj["agentEvent"] == nil ? nil : try payloadData(obj["agentEvent"], "\(context): agentEvent")
         expectWithdrawn = obj["expectWithdrawn"] as? Bool ?? true
 
-        let responses = ["allow", "deny", "hangup", "reader-gone", "parent-killed", "agent-event"]
+        let responses = ["allow", "deny", "hangup", "reader-gone", "parent-killed", "agent-event", "wait"]
         if expectPrompt != nil {
             guard let respond, responses.contains(respond) else {
                 throw FixtureError("\(context): expectPrompt needs respond = \(responses.joined(separator: " | "))")
@@ -335,7 +352,8 @@ func run(_ step: Step, instance: NudgeInstance, binDir: URL, hookConfigDir: URL?
     let hook: HookRun
     do {
         hook = try HookRun(binDir: binDir, instance: instance, payload: step.payload,
-                           viaShell: step.respond == "parent-killed", configDir: hookConfigDir)
+                           viaShell: step.respond == "parent-killed", configDir: hookConfigDir,
+                           arguments: step.args, extraEnv: step.env)
     } catch {
         return ["couldn't start nudge-hook: \(error)"]
     }
@@ -437,7 +455,7 @@ func run(_ step: Step, instance: NudgeInstance, binDir: URL, hookConfigDir: URL?
         // reporting what happened next: the call ran, or the turn stopped.
         do {
             let agentHook = try HookRun(binDir: binDir, instance: instance, payload: step.agentEvent!,
-                                        binary: "nudge-agent-hook")
+                                        binary: "nudge-agent-hook", arguments: step.agentArgs)
             if !agentHook.finish(within: 5) {
                 problems.append("nudge-agent-hook still running after 5s")
                 agentHook.kill()
@@ -478,6 +496,19 @@ func run(_ step: Step, instance: NudgeInstance, binDir: URL, hookConfigDir: URL?
             }
             checkOutput(step, hook, hookConfigDir: hookConfigDir, into: &problems)
         }
+    case "wait":
+        // Nobody answers. The hook has to give up by itself, and its exit
+        // has to take the prompt off the menu bar.
+        guard hook.finish(within: step.waitSeconds) else {
+            problems.append("hook still waiting \(Int(step.waitSeconds))s after its prompt went up, with nothing answering it")
+            _ = try? instance.resolve(id: id, decision: "deny")
+            _ = hook.finish(within: 5)
+            return problems
+        }
+        if !waitUntil(3, { !stillQueued() }) {
+            problems.append("prompt \(id) still queued 3s after the hook gave up (should be withdrawn)")
+        }
+        checkOutput(step, hook, hookConfigDir: hookConfigDir, into: &problems)
     default:
         let decision = step.respond!
         do {
