@@ -19,38 +19,40 @@ It's a quality-of-life tool, not a security tool. The terminal still works: answ
 
 ## Install
 
+With [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask zachdelong/tap/nudge
+nudge-setup
+```
+
+`nudge-setup` seeds default patterns, adds the hooks to `~/.claude/settings.json` (and to `~/.codex/hooks.json` if you use [Codex](#codex)), and starts Nudge. It's safe to run again. `nudge-setup --remove` takes the hooks back out.
+
+You'll need macOS 14+. Agent sessions also need `tmux`.
+
+<details>
+<summary>From source, or without Homebrew</summary>
+
+Build from source with the install script, or clone and `make install`. You'll need Xcode Command Line Tools and `jq`.
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ZachDeLong/nudge/main/install.sh | bash
 ```
 
-Or clone and `make install`. Either way it builds the app into `/Applications/Nudge.app`, seeds default patterns, adds the hooks to `~/.claude/settings.json` (and to `~/.codex/hooks.json` if you use [Codex](#codex)), links `nudge-claude` and `nudge-update` onto your PATH, and launches Nudge.
-
-You'll need macOS 14+, Xcode Command Line Tools, and `jq` (`brew install jq`). Agent sessions also need `tmux`.
-
-<details>
-<summary>Pre-built bundle instead of building from source</summary>
-
-Grab `Nudge.app.zip` from the [latest release](https://github.com/ZachDeLong/nudge/releases/latest), unzip it into `/Applications`, and clear the quarantine flag (the build is unsigned):
+Or grab `Nudge.app.zip` from the [latest release](https://github.com/ZachDeLong/nudge/releases/latest), unzip it into `/Applications`, clear the quarantine flag, and run the setup script bundled in the app:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Nudge.app
+/Applications/Nudge.app/Contents/Resources/setup/nudge-setup.sh
 ```
 
-Then wire up the hooks from a clone of the repo:
-
-```sh
-git clone https://github.com/ZachDeLong/nudge.git && cd nudge
-./scripts/seed-patterns.sh
-./scripts/install-hook.sh
-./scripts/install-codex-hook.sh   # if you use Codex
-open -ga Nudge
-```
+Releases are signed with a self-signed certificate, not an Apple one. Gatekeeper doesn't recognize it, which is why a fresh download needs the `xattr` step (Homebrew does it for you). It also means macOS keeps Nudge's Accessibility permission across updates.
 
 </details>
 
 ## Codex
 
-Nudge answers Codex's approval requests too, from the CLI or the ChatGPT app. If you have `~/.codex`, `make install` adds two entries to its `hooks.json`, after backing the file up:
+Nudge answers Codex's approval requests too, from the CLI or the ChatGPT app. If you have `~/.codex`, `nudge-setup` (or `make install`) adds two entries to its `hooks.json`, after backing the file up:
 
 - `PermissionRequest` runs `nudge-hook --agent codex` when Codex is about to ask. The popover says Codex and shows the command, or the patch and the files it touches.
 - `Interrupt` runs `nudge-agent-hook --agent codex`. Stop a turn in Codex and Nudge's copy of its prompt goes away.
@@ -85,7 +87,7 @@ Click the menu bar icon when there's no prompt up, or right-click it to get the 
 
 A few things the panel doesn't tell you:
 
-- **⏎ / esc from any app** needs Accessibility access: System Settings → Privacy & Security → Accessibility, which macOS 27 renamed Device Control and Data Access. The Enable… button in the panel opens it. The build is unsigned, so macOS forgets that grant after every update. Remove Nudge from the list and add it back. Keys are ignored for the first 0.6s a prompt is up, so you won't approve something by accident while typing.
+- **⏎ / esc from any app** needs Accessibility access: System Settings → Privacy & Security → Accessibility, which macOS 27 renamed Device Control and Data Access. The Enable… button in the panel opens it. Since 1.4.2 macOS keeps that grant across updates. Coming from an older version, remove Nudge from the list and add it back once. Keys are ignored for the first 0.6s a prompt is up, so you won't approve something by accident while typing.
 - **Quit means quit.** The hooks won't relaunch Nudge until you open it yourself. If it crashes, it comes back on the next hook call.
 
 ## nudge-ask
@@ -154,7 +156,7 @@ If you allow a pattern prompt and an ask rule covers the same command, Claude as
 
 ## Known limits
 
-- **Unsigned.** No notarization, so the pre-built zip needs the `xattr` step, and Accessibility access has to be re-granted after each update.
+- **Not notarized.** Releases are self-signed, so Gatekeeper doesn't know them: the pre-built zip needs the `xattr` step (Homebrew and `nudge-update` handle it).
 - **Answering in the terminal.** Esc or No there clears Nudge's copy right away. Yes clears it when the command finishes, because Claude doesn't tell hooks it was answered. For a slow command the prompt sits in the menu bar until then, and clicking it does nothing.
 - **Plan approvals and questions stay in the terminal.** Accepting a plan means choosing how Claude carries on, and a plain Allow can't say which.
 - **"Always allow" is for patterns.** Claude's own prompts get Allow, Deny, and allow for this session.

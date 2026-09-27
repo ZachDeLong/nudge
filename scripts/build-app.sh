@@ -19,6 +19,15 @@ done
 cp "$ROOT/Resources-Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
+# Setup scripts ride along in the bundle so installs without a clone
+# (Homebrew, the release zip) can run `nudge-setup`.
+SETUP="$APP/Contents/Resources/setup"
+mkdir -p "$SETUP"
+for f in nudge-setup.sh seed-patterns.sh default-patterns.txt install-hook.sh uninstall-hook.sh install-codex-hook.sh; do
+    cp "$ROOT/scripts/$f" "$SETUP/$f"
+done
+chmod +x "$SETUP"/*.sh
+
 # Signing with a stable identity (CI sets NUDGE_SIGN_IDENTITY from a
 # self-signed certificate) makes macOS identify Nudge by that certificate
 # instead of by each build's hash, so the Accessibility grant survives
