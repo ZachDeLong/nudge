@@ -227,10 +227,17 @@ final class MenuBarController: NSObject {
             store.prefs = settings
         }
         refreshIcon()
-        // If Nudge was paused while a prompt was up, resolve it so callers
-        // unblock instead of waiting on a popover that won't appear.
-        if !settings.enabled, currentPrompt != nil {
-            resolve(currentPrompt?.resolvedKind == .ask ? .cancel : .deny)
+        // Paused means Nudge steps aside, so hand every waiting prompt back
+        // instead of denying it: .cancel makes the hook exit without an
+        // answer, and the agent's own dialog (already up for its own
+        // prompts) or its normal permission flow takes over. nudge-ask
+        // exits as cancelled and Claude asks in the terminal.
+        if !settings.enabled {
+            Task { [queue] in
+                for prompt in await queue.snapshot() {
+                    _ = await queue.resolve(id: prompt.id, with: .cancel)
+                }
+            }
         }
         if panel.isVisible, currentPrompt == nil {
             animatedRefit()

@@ -1,6 +1,8 @@
 {
-  "description": "patterns keep asking in dontAsk (they're the ask-even-when-Claude-wouldn't list)",
-  "patterns": ["Bash(git push:*)"],
+  "description": "dontAsk means never ask: a pattern match there gets no prompt (it would stall a headless run until the 5-minute timeout)",
+  "patterns": [
+    "Bash(git push:*)"
+  ],
   "payload": {
     "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000036",
     "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000036.jsonl",
@@ -9,19 +11,13 @@
     "permission_mode": "dontAsk",
     "hook_event_name": "PreToolUse",
     "tool_name": "Bash",
-    "tool_input": {"command": "git push origin main", "description": "Push main to origin"},
+    "tool_input": {
+      "command": "git push origin main",
+      "description": "Push main to origin"
+    },
     "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
   },
-  "expectPrompt": {
-    "kind": null,
-    "tool": "Bash",
-    "sessionId": "8d3f0c52-6a1e-4b7f-9e2d-000000000036",
-    "permissionMode": "dontAsk",
-    "command": "git push origin main",
-    "matchedPattern": "Bash(git push:*)",
-    "event": "PreToolUse"
-  },
-  "respond": "allow",
-  "expectStdout": {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow", "permissionDecisionReason": "Allowed in Nudge."}},
+  "expectPrompt": null,
+  "expectStdout": null,
   "expectExit": 0
 }

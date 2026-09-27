@@ -46,7 +46,8 @@ let cwd = inputJSON["cwd"] as? String ?? FileManager.default.currentDirectoryPat
 let sessionId = inputJSON["session_id"] as? String ?? "unknown"
 let permissionMode = inputJSON["permission_mode"] as? String ?? "default"
 
-// dontAsk means "never ask me"; bypassPermissions turns patterns off too.
+// dontAsk means "never ask me" for both paths; bypassPermissions turns
+// patterns off too (see nudgeAsks).
 guard nudgeAsks(event: event, permissionMode: permissionMode) else { exit(0) }
 
 // MARK: - Skip when user is already at a terminal/IDE

@@ -59,13 +59,14 @@ public enum HookEvent: String, Sendable {
 ///   dontAsk: that mode denies anything not pre-approved instead of asking,
 ///   and a popover would contradict it. (Claude Code 2.1.283 doesn't fire
 ///   PermissionRequest in dontAsk at all; this holds if that changes.)
-/// - PreToolUse (patterns): in every mode except bypassPermissions, where
-///   you turned permission checks off. Patterns are the "ask me even when
-///   Claude wouldn't" list, so auto and dontAsk keep them.
+/// - PreToolUse (patterns): the "ask me even when Claude wouldn't" list, so
+///   auto keeps them. Not in bypassPermissions (you turned checks off) or
+///   dontAsk (you said never ask; a pattern there would stall a headless
+///   run until Nudge's 5-minute timeout).
 public func nudgeAsks(event: HookEvent, permissionMode: String) -> Bool {
     switch event {
     case .permissionRequest: return permissionMode != "dontAsk"
-    case .preToolUse: return permissionMode != "bypassPermissions"
+    case .preToolUse: return permissionMode != "bypassPermissions" && permissionMode != "dontAsk"
     }
 }
 

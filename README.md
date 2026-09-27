@@ -129,7 +129,9 @@ If Nudge isn't running, the hooks start it. If anything fails, Claude asks in th
 Which modes Nudge asks in:
 
 - Claude's own prompts come through in every mode they happen in. In auto mode that's rare: ask rules, and calls the classifier won't decide. In `dontAsk` mode Claude never asks, so Nudge doesn't either.
-- Patterns ask in every mode except `bypassPermissions`.
+- Patterns ask in every mode except `bypassPermissions` and `dontAsk`.
+
+Pausing Nudge hands any prompt that's up back to Claude, so you answer it in the terminal instead.
 
 If you allow a pattern prompt and an ask rule covers the same command, Claude asks again right after. Nudge answers that second one for you instead of showing it twice.
 
