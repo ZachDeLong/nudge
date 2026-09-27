@@ -678,6 +678,52 @@ expect(
 )
 expect(patchedFiles("echo hi"), [], "patch: non-patch text names no files")
 
+// MARK: CallKey — one tool call across hook events
+
+func parsedInput(_ json: String) -> Any? {
+    try? JSONSerialization.jsonObject(with: Data(json.utf8))
+}
+
+do {
+    let a = CallKey.make(sessionID: "s1", toolName: "Bash",
+                         toolInput: parsedInput(#"{"command":"git push origin main","description":"Push"}"#))
+    let b = CallKey.make(sessionID: "s1", toolName: "Bash",
+                         toolInput: parsedInput(#"{"description":"Push","command":"git push origin main"}"#))
+    expect(a, b, "callkey: key order in tool_input doesn't matter")
+    expect(a.count, 64, "callkey: sha256 hex")
+    let otherSession = CallKey.make(sessionID: "s2", toolName: "Bash",
+                                    toolInput: parsedInput(#"{"command":"git push origin main","description":"Push"}"#))
+    expect(a == otherSession, false, "callkey: another session is another call")
+    let otherInput = CallKey.make(sessionID: "s1", toolName: "Bash",
+                                  toolInput: parsedInput(#"{"command":"git push origin dev","description":"Push"}"#))
+    expect(a == otherInput, false, "callkey: another command is another call")
+    let otherTool = CallKey.make(sessionID: "s1", toolName: "Write",
+                                 toolInput: parsedInput(#"{"command":"git push origin main","description":"Push"}"#))
+    expect(a == otherTool, false, "callkey: another tool is another call")
+    let nested1 = CallKey.make(sessionID: "s", toolName: "mcp__x__y", toolInput: parsedInput(#"{"o":{"b":1,"a":[1,2]}}"#))
+    let nested2 = CallKey.make(sessionID: "s", toolName: "mcp__x__y", toolInput: parsedInput(#"{"o":{"a":[1,2],"b":1}}"#))
+    expect(nested1, nested2, "callkey: nested key order doesn't matter")
+    expect(CallKey.make(sessionID: "s", toolName: "T", toolInput: nil) == CallKey.make(sessionID: "s", toolName: "T", toolInput: parsedInput("{}")),
+           false, "callkey: missing input differs from empty input")
+}
+
+// MARK: RecentAllows — dedupe a PermissionRequest right after a pattern allow
+
+do {
+    var recent = RecentAllows(ttl: 30)
+    let t0 = Date(timeIntervalSince1970: 1_000_000)
+    recent.record("k", at: t0)
+    expect(recent.consume("other", at: t0.addingTimeInterval(1)), false, "recent: another call isn't covered")
+    expect(recent.consume("k", at: t0.addingTimeInterval(1)), true, "recent: the same call right after is covered")
+    expect(recent.consume("k", at: t0.addingTimeInterval(2)), false, "recent: an allow covers one request, not two")
+    recent.record("k", at: t0)
+    expect(recent.consume("k", at: t0.addingTimeInterval(31)), false, "recent: entries expire")
+    recent.record("a", at: t0)
+    recent.record("b", at: t0.addingTimeInterval(20))
+    expect(recent.consume("b", at: t0.addingTimeInterval(40)), true, "recent: expiry is per entry")
+    expect(recent.consume("a", at: t0.addingTimeInterval(40)), false, "recent: an older entry expired meanwhile")
+}
+
 // MARK: TokenFile — exercises the public surface (ensure / read)
 
 func tempTokenURL() -> URL {

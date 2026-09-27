@@ -112,7 +112,10 @@ let prompt = Prompt(
     permissionMode: permissionMode,
     matchedPattern: matched,
     agent: agent.rawValue,
-    detail: detail?.isEmpty == false ? detail : nil
+    detail: detail?.isEmpty == false ? detail : nil,
+    event: event.rawValue,
+    callKey: CallKey.make(sessionID: sessionId, toolName: toolName, toolInput: inputJSON["tool_input"]),
+    subagentId: inputJSON["agent_id"] as? String
 )
 
 guard let port = NudgeClient.locatePort() else {

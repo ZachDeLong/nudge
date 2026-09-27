@@ -32,6 +32,9 @@ actor PromptServer {
     /// Serves `/test/*` (see `respondToTestAPI`). Off unless the app was
     /// launched by the e2e harness; see `TestAPI.isEnabled`.
     private let testAPIEnabled: Bool
+    /// Pattern prompts just allowed, so the PermissionRequest an ask rule
+    /// raises right after for the same call doesn't pop a second time.
+    private var recentAllows = RecentAllows()
 
     init(
         queue: PromptQueue,
@@ -174,12 +177,25 @@ actor PromptServer {
             await sendAndAwait(Data(resp), on: conn)
             return
         }
+        // You allowed this exact call in a pattern prompt a moment ago, and
+        // Claude is asking again only because an ask rule outranks a hook's
+        // allow. Answer for you instead of asking twice.
+        if prompt.isPermissionRequest, let key = prompt.callKey, recentAllows.consume(key) {
+            let body = (try? JSONEncoder().encode(DecisionResponse(decision: .allow))) ?? Data()
+            let resp = HTTPCodec.writeResponse(status: 200, contentType: "application/json", body: Array(body))
+            await sendAndAwait(Data(resp), on: conn)
+            return
+        }
         let waiter = Task { [queue, timeoutSeconds] in
             try await queue.enqueueWithTimeout(prompt, seconds: timeoutSeconds)
         }
         Self.watchForHangup(conn) { waiter.cancel() }
         do {
             let response = try await waiter.value
+            if response.decision == .allow, prompt.resolvedKind == .permission,
+               !prompt.isPermissionRequest, let key = prompt.callKey {
+                recentAllows.record(key)
+            }
             let body = try JSONEncoder().encode(response)
             let resp = HTTPCodec.writeResponse(status: 200, contentType: "application/json", body: Array(body))
             await sendAndAwait(Data(resp), on: conn)

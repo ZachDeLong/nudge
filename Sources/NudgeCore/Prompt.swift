@@ -24,6 +24,16 @@ public struct Prompt: Codable, Equatable, Identifiable {
     /// The agent's own one-line explanation of the request, when it gives one
     /// (both agents send `tool_input.description` with approval requests).
     public let detail: String?
+    /// The hook event that raised it: "PreToolUse" (a pattern match) or
+    /// "PermissionRequest" (the agent's own prompt). Nil from older hooks and
+    /// nudge-ask.
+    public let event: String?
+    /// `CallKey` of the tool call, so the app can match this prompt to other
+    /// hook events for the same call.
+    public let callKey: String?
+    /// Claude Code's `agent_id` when a subagent made the call; nil for the
+    /// main thread.
+    public let subagentId: String?
 
     public init(
         id: String,
@@ -35,7 +45,10 @@ public struct Prompt: Codable, Equatable, Identifiable {
         permissionMode: String? = nil,
         matchedPattern: String? = nil,
         agent: String? = nil,
-        detail: String? = nil
+        detail: String? = nil,
+        event: String? = nil,
+        callKey: String? = nil,
+        subagentId: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -47,9 +60,15 @@ public struct Prompt: Codable, Equatable, Identifiable {
         self.matchedPattern = matchedPattern
         self.agent = agent
         self.detail = detail
+        self.event = event
+        self.callKey = callKey
+        self.subagentId = subagentId
     }
 
     public var resolvedKind: PromptKind { kind ?? .permission }
+
+    /// Raised by the agent's own approval prompt rather than a pattern.
+    public var isPermissionRequest: Bool { event == "PermissionRequest" }
 
     /// "Claude" or "Codex", for titles and notices.
     public var agentName: String { agent == "codex" ? "Codex" : "Claude" }
