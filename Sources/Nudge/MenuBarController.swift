@@ -808,7 +808,19 @@ final class PromptPanel {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.contentViewController = hosting
+        // SwiftUI goes in a plain container rather than in as the window's
+        // content view. As the content view, NSHostingView resizes the window
+        // itself from windowDidLayout (updateAnimatedWindowSize) while refit()
+        // sets the frame too, and AppKit aborts when a layout pass asks for
+        // another one mid-display ("_postWindowNeedsLayout" crashes, Sep 22 and
+        // 26). Only Nudge sizes the panel now; SwiftUI just reports its size.
+        hosting.sizingOptions = [.intrinsicContentSize]
+        let container = NSView(frame: NSRect(origin: .zero, size: size))
+        hosting.view.translatesAutoresizingMaskIntoConstraints = true
+        hosting.view.autoresizingMask = [.width, .height]
+        hosting.view.frame = container.bounds
+        container.addSubview(hosting.view)
+        panel.contentView = container
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isMovable = false
@@ -816,7 +828,7 @@ final class PromptPanel {
 
     /// Fallback content size if SwiftUI hasn't reported an intrinsic size yet.
     /// Width matches PopoverView's `.frame(width: 420)`. Height is generous;
-    /// the real height comes from `hosting.view.fittingSize` in show().
+    /// the real height comes from the hosting view's intrinsic size in show().
     private static let fallbackContentSize = NSSize(width: 420, height: 200)
 
     /// Flips key-window eligibility for content that changed under a visible
@@ -901,7 +913,7 @@ final class PromptPanel {
 
     private func fittingContentSize() -> NSSize {
         hosting.view.layoutSubtreeIfNeeded()
-        let intrinsic = hosting.view.fittingSize
+        let intrinsic = hosting.view.intrinsicContentSize
         return NSSize(
             width: intrinsic.width  > 1 ? intrinsic.width  : Self.fallbackContentSize.width,
             height: intrinsic.height > 1 ? intrinsic.height : Self.fallbackContentSize.height
