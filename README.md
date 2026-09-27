@@ -15,6 +15,7 @@ It works the same for sessions in the Claude app's Code tab, since those run you
 ## What's in the box
 
 - **Permission popover.** Allow, Deny, allow for this session, or always allow. Enter and Esc work from any app once you grant Accessibility access (or switch them off).
+- **"Claude finished" with a reply box.** When Claude finishes while you're in another app, Nudge shows its last message. Type the next thing and Claude keeps going in the same session.
 - **`nudge-ask`.** A CLI Claude can call when it needs a typed answer from you. Same popover, with a text field.
 - **Agent sessions** (experimental). `nudge-claude` runs Claude Code in tmux, and the menu bar shows the live transcript with a reply box.
 - **`nudge-update`.** Checks GitHub for a new release and installs it after verifying the checksum.
@@ -69,6 +70,16 @@ A few things work differently from Claude Code:
 - If you use auto-review, Nudge asks you before the reviewer sees anything. Codex doesn't tell hooks which reviewer it would use.
 - With "Skip when terminal is focused" on, Nudge also stays quiet while the ChatGPT app is in front.
 - Patterns and "Always allow" are Claude-only.
+
+## When Claude finishes
+
+In auto mode Claude asks less and runs longer, so the useful moment is when it's done. If Claude finishes while you're off in another app, Nudge pops up its last message with a reply box:
+
+- Reply, and Claude carries on with it in the same session. Nudge answers Claude's Stop hook with your text, so this works in any terminal and in the Claude app, no tmux needed. (Claude's terminal labels the reply "Stop hook error". It isn't one.)
+- Dismiss it, and Claude stops as usual.
+- Go back to the terminal (or the Claude app, for its sessions) and Nudge lets go on its own, so the session is yours to type in. It also lets go after five minutes.
+
+It never takes the keyboard from what you're typing: click the reply box to answer. It stays out of the way while you're at the session, for `claude -p` and scripts, and for subagents. Switch it off with "Tell me when Claude finishes".
 
 ## Patterns
 
