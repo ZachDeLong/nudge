@@ -804,6 +804,19 @@ do {
     }
     expect(try? String(contentsOf: settings, encoding: .utf8), "{ not json", "migrate: malformed settings.json left as is")
     expect(FileManager.default.fileExists(atPath: marker.path), false, "migrate: a failed run isn't marked done")
+
+    // settings.json symlinked from a dotfiles repo: edit the target, keep the link.
+    let dotfiles = dir.appendingPathComponent("dotfiles")
+    try? FileManager.default.createDirectory(at: dotfiles, withIntermediateDirectories: true)
+    let target = dotfiles.appendingPathComponent("claude-settings.json")
+    let link = dir.appendingPathComponent("linked-settings.json")
+    try? JSONSerialization.data(withJSONObject: v131).write(to: target)
+    try? FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+    expect(ClaudeSettings.addPermissionRequestHook(settings: link, marker: marker), .added, "migrate: symlinked settings.json gets the hook")
+    let linkType = (try? FileManager.default.attributesOfItem(atPath: link.path))?[.type] as? FileAttributeType
+    expect(linkType, .typeSymbolicLink, "migrate: the symlink stays a symlink")
+    let targetHooks = ((try? JSONSerialization.jsonObject(with: Data(contentsOf: target))) as? [String: Any])?["hooks"] as? [String: Any]
+    expect((targetHooks?["PermissionRequest"] as? [[String: Any]])?.count, 2, "migrate: the link's target has the hook")
 }
 
 // MARK: TokenFile — exercises the public surface (ensure / read)

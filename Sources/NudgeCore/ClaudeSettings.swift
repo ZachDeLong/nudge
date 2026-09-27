@@ -63,9 +63,12 @@ public enum ClaudeSettings {
     /// once: `marker` records that it ran, so taking the entry out by hand
     /// sticks. Everything else in the file is kept; like "Always allow" it's
     /// rewritten with sorted keys, after a backup.
-    public static func addPermissionRequestHook(settings url: URL = defaultURL, marker: URL) -> MigrationResult {
+    public static func addPermissionRequestHook(settings link: URL = defaultURL, marker: URL) -> MigrationResult {
         let fm = FileManager.default
         if fm.fileExists(atPath: marker.path) { return .alreadyMigrated }
+        // Write through a symlinked settings.json (dotfile repos) instead of
+        // replacing the link with a plain file.
+        let url = link.resolvingSymlinksInPath()
         guard let data = try? Data(contentsOf: url) else { return .notInstalled }
         guard var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             return .failed("\(url.path) isn't a JSON object")
