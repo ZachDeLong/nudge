@@ -48,7 +48,14 @@ jobs:
           security import "$RUNNER_TEMP/nudge-signing.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
           rm -f "$RUNNER_TEMP/nudge-signing.p12"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KCPW" "$KC" >/dev/null
-          echo "NUDGE_SIGN_IDENTITY=Nudge Self-Signed (ZachDeLong)" >> "$GITHUB_ENV"
+          # codesign looks identities up through the search list.
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security find-identity "$KC"
+          # Sign by fingerprint: the self-signed certificate isn't trusted, and
+          # lookups by name can skip untrusted identities.
+          SHA=$(security find-identity "$KC" | awk '/Nudge Self-Signed/ { print $2; exit }')
+          [ -n "$SHA" ] || { echo "::error::signing identity not found after import"; exit 1; }
+          echo "NUDGE_SIGN_IDENTITY=$SHA" >> "$GITHUB_ENV"
           echo "NUDGE_SIGN_KEYCHAIN=$KC" >> "$GITHUB_ENV"
 
       - name: Build .app bundle
