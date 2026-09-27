@@ -12,7 +12,7 @@ It's a quality-of-life tool, not a security tool. The terminal still works: answ
 
 It works with [Codex](#codex) too, and with sessions in the Claude app's Code tab, since those run your `~/.claude` hooks. The app sandboxes most shell commands, so Claude asks less often there.
 
-![Nudge asking to allow a git push, under its menu bar icon](./docs/img/hero.png)
+![Nudge under its menu bar icon, showing Claude's last message with a reply typed in](./docs/img/finished.png)
 
 ## What's in the box
 
@@ -85,6 +85,8 @@ A few things work differently from Claude Code:
 - Patterns and "Always allow" are Claude-only.
 
 ## Patterns
+
+![Nudge asking to allow a git push --force that matched a pattern](./docs/img/hero.png)
 
 Patterns are for things you want to be asked about even when Claude wouldn't ask, like a command you've allow-listed or anything in auto mode. They live in `~/.config/nudge/patterns.txt`, one rule per line, and edits apply immediately. An empty file is fine: Nudge still shows Claude's own prompts.
 
