@@ -1,4 +1,5 @@
 import Foundation
+import NudgeCore
 
 /// In-memory allow list for "Allow this session" decisions. Reset on app quit.
 ///
@@ -81,39 +82,11 @@ enum PersistentAllowList {
         return .added
     }
 
-    static var defaultSettingsURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/settings.json")
-    }
+    static var defaultSettingsURL: URL { ClaudeSettings.defaultURL }
 
-    /// Snapshots the pre-write bytes next to the file, matching the
-    /// `settings.json.bak.<epoch>` convention `scripts/install-hook.sh` uses —
-    /// including its keep-the-5-newest pruning, so the two writers don't
-    /// accumulate backups against each other.
-    ///
     /// Best-effort by design: failing to back up shouldn't block the write the
     /// user actually asked for.
     private static func backUp(original: Data, for url: URL) {
-        let stamp = Int(Date().timeIntervalSince1970)
-        let backup = url.appendingPathExtension("bak.\(stamp)")
-        guard (try? original.write(to: backup, options: .atomic)) != nil else { return }
-
-        let prefix = url.lastPathComponent + ".bak."
-        let dir = url.deletingLastPathComponent()
-        guard let siblings = try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey]
-        ) else { return }
-
-        let backups = siblings
-            .filter { $0.lastPathComponent.hasPrefix(prefix) }
-            .sorted { a, b in
-                let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                return da > db
-            }
-        for stale in backups.dropFirst(5) {
-            try? FileManager.default.removeItem(at: stale)
-        }
+        ClaudeSettings.backUp(original: original, for: url)
     }
 }

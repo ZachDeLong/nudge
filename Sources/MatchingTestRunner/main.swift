@@ -724,6 +724,88 @@ do {
     expect(recent.consume("a", at: t0.addingTimeInterval(40)), false, "recent: an older entry expired meanwhile")
 }
 
+// MARK: ClaudeSettings — PermissionRequest hook for installs that predate it
+
+do {
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("nudge-migrate-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let settings = dir.appendingPathComponent("settings.json")
+    let marker = dir.appendingPathComponent("config/permission-request-hook")
+    let hook = ClaudeSettings.nudgeHookCommand
+    let agentHook = "/Applications/Nudge.app/Contents/MacOS/nudge-agent-hook"
+    func write(_ obj: Any) { try? JSONSerialization.data(withJSONObject: obj).write(to: settings) }
+    func read() -> [String: Any] {
+        (try? JSONSerialization.jsonObject(with: Data(contentsOf: settings))) as? [String: Any] ?? [:]
+    }
+    func backups() -> Int {
+        ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasPrefix("settings.json.bak.") }.count
+    }
+    let v131: [String: Any] = [
+        "model": "opus",
+        "permissions": ["allow": ["Bash(git status:*)"], "ask": ["Bash(git push:*)"]],
+        "hooks": [
+            "PreToolUse": [
+                ["matcher": "Bash", "hooks": [["type": "command", "command": "/usr/local/bin/my-guard"]]],
+                ["matcher": "Bash|Edit|Write|Read|MultiEdit|NotebookEdit|mcp__.*", "hooks": [["type": "command", "command": hook]]],
+                ["matcher": "*", "hooks": [["type": "command", "command": agentHook]]],
+            ],
+            "PermissionRequest": [["matcher": "Bash", "hooks": [["type": "command", "command": "/usr/local/bin/other-tool", "timeout": 30]]]],
+            "Stop": [["hooks": [["type": "command", "command": agentHook]]]],
+        ],
+    ]
+
+    expect(ClaudeSettings.addPermissionRequestHook(settings: settings, marker: marker), .notInstalled, "migrate: no settings.json → not installed")
+    write(["hooks": ["PreToolUse": [["matcher": "Bash", "hooks": [["type": "command", "command": "/usr/local/bin/my-guard"]]]]]])
+    expect(ClaudeSettings.addPermissionRequestHook(settings: settings, marker: marker), .notInstalled, "migrate: without Nudge's PreToolUse hook it adds nothing")
+    expect((read()["hooks"] as? [String: Any])?["PermissionRequest"] == nil, true, "migrate: a settings file without Nudge is left alone")
+    expect(backups(), 0, "migrate: no backup when nothing is written")
+
+    write(v131)
+    expect(ClaudeSettings.addPermissionRequestHook(settings: settings, marker: marker), .added, "migrate: 1.3.x settings get the hook")
+    let after = read()
+    let hooks = after["hooks"] as? [String: Any] ?? [:]
+    let pr = hooks["PermissionRequest"] as? [[String: Any]] ?? []
+    expect(pr.count, 2, "migrate: the user's own PermissionRequest hook stays, Nudge's is appended")
+    expect((pr.first?["hooks"] as? [[String: Any]])?.first?["command"] as? String, "/usr/local/bin/other-tool", "migrate: other PermissionRequest hook untouched")
+    expect((pr.first?["hooks"] as? [[String: Any]])?.first?["timeout"] as? Int, 30, "migrate: other hook keeps its timeout")
+    expect(pr.last?["matcher"] as? String, "*", "migrate: Nudge's entry matches every tool")
+    expect((pr.last?["hooks"] as? [[String: Any]])?.first?["command"] as? String, hook, "migrate: Nudge's entry runs nudge-hook")
+    expect((hooks["PreToolUse"] as? [[String: Any]])?.count, 3, "migrate: PreToolUse entries untouched")
+    expect((hooks["Stop"] as? [[String: Any]])?.count, 1, "migrate: other events untouched")
+    expect(after["model"] as? String, "opus", "migrate: other settings untouched")
+    expect((after["permissions"] as? [String: Any])?["ask"] as? [String], ["Bash(git push:*)"], "migrate: permissions untouched")
+    expect(backups(), 1, "migrate: backs up before writing")
+    expect(FileManager.default.fileExists(atPath: marker.path), true, "migrate: leaves a marker")
+    let raw = (try? String(contentsOf: settings, encoding: .utf8)) ?? ""
+    expect(raw.contains(#"\/Applications"#), false, "migrate: doesn't escape slashes")
+
+    // The user takes it out again: the marker keeps Nudge from re-adding it.
+    write(v131)
+    expect(ClaudeSettings.addPermissionRequestHook(settings: settings, marker: marker), .alreadyMigrated, "migrate: runs once")
+    expect(((read()["hooks"] as? [String: Any])?["PermissionRequest"] as? [[String: Any]])?.count, 1, "migrate: a removed entry stays removed")
+
+    // Fresh install (install-hook.sh already added it): nothing to write.
+    try? FileManager.default.removeItem(at: marker)
+    var fresh = v131
+    var freshHooks = fresh["hooks"] as! [String: Any]
+    freshHooks["PermissionRequest"] = [["matcher": "*", "hooks": [["type": "command", "command": hook]]]]
+    fresh["hooks"] = freshHooks
+    write(fresh)
+    let before = try? Data(contentsOf: settings)
+    expect(ClaudeSettings.addPermissionRequestHook(settings: settings, marker: marker), .alreadyPresent, "migrate: already there")
+    expect(try? Data(contentsOf: settings), before, "migrate: already there → file untouched")
+    expect(FileManager.default.fileExists(atPath: marker.path), true, "migrate: already there still marks it done")
+
+    try? FileManager.default.removeItem(at: marker)
+    try? Data("{ not json".utf8).write(to: settings)
+    if case .failed = ClaudeSettings.addPermissionRequestHook(settings: settings, marker: marker) { passed += 1 } else {
+        failures.append("✗ migrate: malformed settings.json should fail")
+    }
+    expect(try? String(contentsOf: settings, encoding: .utf8), "{ not json", "migrate: malformed settings.json left as is")
+    expect(FileManager.default.fileExists(atPath: marker.path), false, "migrate: a failed run isn't marked done")
+}
+
 // MARK: TokenFile — exercises the public surface (ensure / read)
 
 func tempTokenURL() -> URL {

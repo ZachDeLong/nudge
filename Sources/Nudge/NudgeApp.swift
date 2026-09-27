@@ -47,6 +47,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // left behind by a previous Quit so hooks can auto-launch as normal.
         AutoLaunch.allow()
 
+        // Installs from before PermissionRequest support (nudge-update swaps
+        // the app, not the hooks) get the new hook entry, once. Never from a
+        // harness instance: that's someone else's settings.json.
+        if !ConfigDir.isOverridden {
+            let marker = ConfigDir.url.appendingPathComponent("permission-request-hook")
+            let result = ClaudeSettings.addPermissionRequestHook(marker: marker)
+            NSLog("Nudge: PermissionRequest hook in ~/.claude/settings.json: \(result)")
+        }
+
         Task { @MainActor in
             self.menuBar = MenuBarController(queue: queue, activityStore: activityStore)
         }
