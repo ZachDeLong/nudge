@@ -59,7 +59,7 @@ Nudge answers Codex's approval requests too, from the CLI or the ChatGPT app. If
 - `PermissionRequest` runs `nudge-hook --agent codex` when Codex is about to ask. The popover says Codex and shows the command, or the patch and the files it touches.
 - `Interrupt` runs `nudge-agent-hook --agent codex`. Stop a turn in Codex and Nudge's copy of its prompt goes away.
 
-Codex skips new hooks until you trust them. Do it once: run `codex` in a terminal (the ChatGPT app ships it at `/Applications/ChatGPT.app/Contents/Resources/codex`), type `/hooks`, and trust Nudge's two entries.
+Codex skips new hooks until you trust them. Do it once: run `codex` in a terminal (the ChatGPT app ships it at `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex`), type `/hooks`, and trust Nudge's two entries.
 
 A few things work differently from Claude Code:
 

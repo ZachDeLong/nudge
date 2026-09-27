@@ -586,7 +586,10 @@ func runCodexSuite(_ opts: Options) -> Never {
 
     guard let codex = opts.codexBin
         ?? findExecutable("codex", extraDirs: ["/opt/homebrew/bin", "/usr/local/bin", "~/.local/bin"])
-        ?? ["/Applications/ChatGPT.app/Contents/Resources/codex"].first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+        ?? [
+            "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",  // app 26.9+
+            "/Applications/ChatGPT.app/Contents/Resources/codex",
+        ].first(where: { FileManager.default.isExecutableFile(atPath: $0) })
     else {
         die("codex not found; pass --codex-bin")
     }
