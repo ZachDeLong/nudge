@@ -22,11 +22,13 @@ It's a quality-of-life tool, not a security tool. The terminal still works: answ
 With [Homebrew](https://brew.sh):
 
 ```sh
-brew install --cask zachdelong/tap/nudge
+brew install --cask zachdelong/tap/nudge-app
 nudge-setup
 ```
 
 `nudge-setup` seeds default patterns, adds the hooks to `~/.claude/settings.json` (and to `~/.codex/hooks.json` if you use [Codex](#codex)), and starts Nudge. It's safe to run again. `nudge-setup --remove` takes the hooks back out.
+
+The cask is `nudge-app` because Homebrew's own `nudge` is a different app (MacAdmins' OS-update reminder), so `brew install --cask nudge` gets you that one instead.
 
 You'll need macOS 14+. Agent sessions also need `tmux`.
 
