@@ -29,8 +29,10 @@ jobs:
       - name: Run XCTest suite
         run: swift test -c release
 
-      - name: Codex hook installer tests
-        run: ./Tests/install/codex-hook-test.sh
+      - name: Hook installer tests
+        run: |
+          ./Tests/install/claude-hook-test.sh
+          ./Tests/install/codex-hook-test.sh
 
       # Layer 1: recorded hook payloads through the real nudge-hook into a
       # real, isolated Nudge (its own temp config dir, port and token),

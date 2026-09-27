@@ -1,10 +1,11 @@
 name: Release
 
+# Tag pushes only. A manual run from a branch could build something other
+# than the tag and publish it under the tag's name.
 on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -61,15 +62,22 @@ jobs:
       - name: Build .app bundle
         run: ./scripts/build-app.sh .build/release
 
+      # The exact requirement users' Accessibility grants are tied to, so a
+      # swapped certificate fails here instead of in everyone's settings.
       - name: Check the app is signed with the stable certificate
         run: |
-          codesign -d -r- .build/release/Nudge.app 2>&1 | tee /dev/stderr | grep -q 'certificate leaf'             || { echo "::error::Nudge.app isn't signed with the stable certificate"; exit 1; }
+          EXPECTED='designated => identifier "com.zachdelong.Nudge" and certificate leaf = H"a90ab30d1fda3a7fcef043676bc050df3e7519ff"'
+          ACTUAL=$(codesign -d -r- .build/release/Nudge.app 2>&1 | grep '^designated')
+          echo "$ACTUAL"
+          [ "$ACTUAL" = "$EXPECTED" ] || { echo "::error::Nudge.app isn't signed with the stable certificate"; exit 1; }
+          codesign -dv .build/release/Nudge.app 2>&1 | grep -q 'flags=.*runtime' \
+            || { echo "::error::Nudge.app isn't signed with the hardened runtime"; exit 1; }
 
       - name: Verify Info.plist version matches tag
         run: |
           PLIST="Resources-Info.plist"
           PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
-          TAG="${GITHUB_REF##*/}"
+          TAG="$GITHUB_REF_NAME"
           TAG_VERSION="${TAG#v}"
           if [[ "$PLIST_VERSION" != "$TAG_VERSION" ]]; then
             echo "::error::Tag $TAG (-> $TAG_VERSION) doesn't match Info.plist version $PLIST_VERSION"
@@ -83,27 +91,24 @@ jobs:
           zip -ry Nudge.app.zip Nudge.app
 
       # `nudge-update --apply` refuses to swap /Applications/Nudge.app unless
-      # the download matches this digest. The build is unsigned, so this is the
-      # only integrity check standing between a bad asset and the user's Mac.
+      # the download matches this digest, and the Homebrew cask pins it.
       - name: Checksum app bundle
         run: |
           cd .build/release
           shasum -a 256 Nudge.app.zip > Nudge.app.zip.sha256
           cat Nudge.app.zip.sha256
 
+      # Never replaces the assets of a release that already exists: the zip
+      # isn't reproducible, so a rebuild would break the published checksum
+      # the cask pins.
       - name: Create release and upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF##*/}"
-          gh release create "$TAG" \
+          gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "$TAG" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
             --generate-notes \
-            .build/release/Nudge.app.zip \
-            .build/release/Nudge.app.zip.sha256 || \
-          gh release upload "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber \
             .build/release/Nudge.app.zip \
             .build/release/Nudge.app.zip.sha256

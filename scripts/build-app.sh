@@ -34,7 +34,10 @@ chmod +x "$SETUP"/*.sh
 # updates. Without it the binaries keep the linker's ad-hoc signature.
 # NUDGE_SIGN_KEYCHAIN optionally names the keychain holding the identity.
 if [[ -n "${NUDGE_SIGN_IDENTITY:-}" ]]; then
-    sign=(codesign --force --timestamp=none --sign "$NUDGE_SIGN_IDENTITY")
+    # Hardened runtime: without it the loader honours DYLD_INSERT_LIBRARIES,
+    # so any process could start Nudge with its own code inside and borrow
+    # the Accessibility grant. Nudge needs no entitlements to run under it.
+    sign=(codesign --force --timestamp=none --options runtime --sign "$NUDGE_SIGN_IDENTITY")
     if [[ -n "${NUDGE_SIGN_KEYCHAIN:-}" ]]; then
         sign+=(--keychain "$NUDGE_SIGN_KEYCHAIN")
     fi
