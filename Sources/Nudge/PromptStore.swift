@@ -17,6 +17,9 @@ final class PromptStore: ObservableObject {
     /// Whether global ⏎/esc can reach Nudge. They need Accessibility access;
     /// without it the keycaps would advertise shortcuts that do nothing.
     @Published var globalKeysAvailable: Bool = GlobalKeys.isAvailable
+    /// The app in front answers ⏎ and esc itself (a terminal, the Claude or
+    /// ChatGPT app), so Nudge's global keys are off until you switch away.
+    @Published var keysStandDown: Bool = false
 }
 
 /// Global key monitoring (⏎ allows, esc denies from any app) only receives

@@ -661,10 +661,25 @@ final class MenuBarController: NSObject {
             DispatchQueue.main.async { self.resolve(isAllow ? .allow : .deny) }
         }
         // ⏎ right after switching apps was meant for the app you switched to.
+        // The keycaps follow the app in front, so they only show when ⏎ and
+        // esc would reach Nudge.
+        refreshKeysStandDown()
         appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.answerKeys.typed(at: Date()) }
+            MainActor.assumeIsolated {
+                self?.answerKeys.typed(at: Date())
+                self?.refreshKeysStandDown()
+            }
+        }
+    }
+
+    private func refreshKeysStandDown() {
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let standDown = front.map(FrontmostApp.ownPromptBundleIDs.contains) ?? false
+        guard standDown != store.keysStandDown else { return }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+            store.keysStandDown = standDown
         }
     }
 

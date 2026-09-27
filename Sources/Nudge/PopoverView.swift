@@ -119,7 +119,7 @@ struct PopoverView: View {
             // .keyboardShortcut here: if the panel was still key from a chat
             // or an ask when this prompt swapped in, ⏎ would press Allow
             // straight away, past AnswerKeys' guards.
-            let keys = state.globalKeysAvailable && state.prefs.globalKeys
+            let keys = state.globalKeysAvailable && state.prefs.globalKeys && !state.keysStandDown
             Button(action: onDeny) {
                 ButtonLabel(title: "Deny", key: keys ? "esc" : nil)
             }
