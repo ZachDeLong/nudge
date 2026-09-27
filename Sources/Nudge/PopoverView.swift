@@ -13,6 +13,7 @@ struct PopoverView: View {
     let onTogglePause: () -> Void
     let onToggleSkipTerminal: () -> Void
     let onToggleGlobalKeys: () -> Void
+    let onToggleFinishedMessages: () -> Void
     let onQuit: () -> Void
     let onEnableGlobalKeys: () -> Void
     @ObservedObject var agentChat: AgentChatStore
@@ -52,6 +53,8 @@ struct PopoverView: View {
             permissionContent(for: prompt)
         case .ask:
             askContent(for: prompt)
+        case .finished:
+            finishedContent(for: prompt)
         }
     }
 
@@ -164,6 +167,19 @@ struct PopoverView: View {
         AskBody(question: prompt.command, notice: state.notice, onSubmit: onSubmitText, onCancel: onCancelAsk)
     }
 
+    // MARK: - Finished flow
+
+    @ViewBuilder
+    private func finishedContent(for prompt: Prompt) -> some View {
+        header(prompt: prompt, title: "\(prompt.agentName) finished")
+        AskBody(
+            question: prompt.command, notice: state.notice,
+            placeholder: "Reply to keep it going…", cancelTitle: "Dismiss",
+            messageMaxHeight: 160, focusOnAppear: false,
+            onSubmit: onSubmitText, onCancel: onCancelAsk
+        )
+    }
+
     // MARK: - Shared header
 
     @ViewBuilder
@@ -250,6 +266,16 @@ struct PopoverView: View {
                 isOn: Binding(
                     get: { prefs.skipWhenTerminalFocused },
                     set: { _ in onToggleSkipTerminal() }
+                )
+            )
+
+            SettingRow(
+                symbol: "checkmark.bubble",
+                title: "Tell me when Claude finishes",
+                detail: "When you're away from its terminal, with a reply box",
+                isOn: Binding(
+                    get: { prefs.finishedMessages },
+                    set: { _ in onToggleFinishedMessages() }
                 )
             )
 
@@ -354,7 +380,8 @@ enum PromptCopy {
 
     /// Tool name for the subtitle. Codex's `apply_patch` reads as "Patch".
     static func toolLabel(_ prompt: Prompt) -> String {
-        prompt.tool == "apply_patch" ? "Patch" : prompt.tool
+        if prompt.resolvedKind == .finished { return "Done" }
+        return prompt.tool == "apply_patch" ? "Patch" : prompt.tool
     }
 
     static func projectName(_ prompt: Prompt) -> String {
@@ -711,6 +738,11 @@ private struct AgentSessionsPanel: View {
 private struct AskBody: View {
     let question: String
     let notice: DecisionNotice?
+    var placeholder: String = "Type your answer…"
+    var cancelTitle: String = "Cancel"
+    var messageMaxHeight: CGFloat = 120
+    /// Asks focus their field at once; a finished message waits for a click.
+    var focusOnAppear: Bool = true
     let onSubmit: (String) -> Void
     let onCancel: () -> Void
     @State private var text: String = ""
@@ -730,7 +762,7 @@ private struct AskBody: View {
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .textSelection(.enabled)
             }
-            .frame(maxHeight: 120)
+            .frame(maxHeight: messageMaxHeight)
             .background(Color.primary.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
@@ -739,7 +771,7 @@ private struct AskBody: View {
             // misaligns with placeholder). Enter sends; Shift+Enter breaks the
             // line, matching the chat composer below the fold.
             VStack(alignment: .trailing, spacing: 5) {
-                TextField("Type your answer…", text: $text, axis: .vertical)
+                TextField(placeholder, text: $text, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .lineLimit(3...8)
@@ -767,7 +799,7 @@ private struct AskBody: View {
                 } else {
                     HStack(spacing: 8) {
                         Button(action: onCancel) {
-                            ButtonLabel(title: "Cancel", key: "esc")
+                            ButtonLabel(title: cancelTitle, key: "esc")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
@@ -785,7 +817,7 @@ private struct AskBody: View {
                 }
             }
         }
-        .onAppear { focused = true }
+        .onAppear { if focusOnAppear { focused = true } }
     }
 
     private func submit() {
@@ -970,6 +1002,7 @@ private struct ToolBadge: View {
         case "Glob", "Grep":                        return "magnifyingglass"
         case "WebFetch", "WebSearch":               return "globe"
         case "Ask":                                 return "bubble.left.fill"
+        case "Stop":                                return "checkmark.bubble.fill"
         case let t where t.hasPrefix("mcp__"):      return "puzzlepiece.extension.fill"
         default:                                    return "sparkles"
         }

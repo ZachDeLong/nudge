@@ -15,20 +15,25 @@ public struct Prefs: Codable, Equatable {
     /// denies a permission prompt from whatever app is in front.
     public var globalKeys: Bool
 
+    /// When true, Nudge tells you when Claude finishes a turn while you're
+    /// away from its terminal, with a box to reply and keep it going.
+    public var finishedMessages: Bool
+
     public static let `default` = Prefs(enabled: true, skipWhenTerminalFocused: true)
 
     public static var url: URL {
         ConfigDir.url.appendingPathComponent("prefs.json")
     }
 
-    public init(enabled: Bool, skipWhenTerminalFocused: Bool, globalKeys: Bool = true) {
+    public init(enabled: Bool, skipWhenTerminalFocused: Bool, globalKeys: Bool = true, finishedMessages: Bool = true) {
         self.enabled = enabled
         self.skipWhenTerminalFocused = skipWhenTerminalFocused
         self.globalKeys = globalKeys
+        self.finishedMessages = finishedMessages
     }
 
     private enum CodingKeys: String, CodingKey {
-        case enabled, skipWhenTerminalFocused, globalKeys
+        case enabled, skipWhenTerminalFocused, globalKeys, finishedMessages
     }
 
     /// Keys added later are optional, so an older prefs.json keeps its
@@ -38,6 +43,7 @@ public struct Prefs: Codable, Equatable {
         enabled = try c.decode(Bool.self, forKey: .enabled)
         skipWhenTerminalFocused = try c.decode(Bool.self, forKey: .skipWhenTerminalFocused)
         globalKeys = try c.decodeIfPresent(Bool.self, forKey: .globalKeys) ?? true
+        finishedMessages = try c.decodeIfPresent(Bool.self, forKey: .finishedMessages) ?? true
     }
 
     /// Loads from disk, falling back to defaults when the file is missing
@@ -80,6 +86,14 @@ public enum FrontmostApp {
     /// and IDEs above, Codex's desktop apps, and the Claude app (its prompt
     /// card answers to esc, and ⏎ sends a message). Nudge's global keys stand
     /// down while one is in front.
+    /// Where a Claude Code session shows itself: any terminal or IDE, plus
+    /// the Claude app for sessions running in it.
+    public static func sessionUIBundleIDs(entrypoint: String?) -> Set<String> {
+        entrypoint == "claude-desktop"
+            ? terminalBundleIDs.union(["com.anthropic.claudefordesktop"])
+            : terminalBundleIDs
+    }
+
     public static let ownPromptBundleIDs: Set<String> =
         terminalBundleIDs.union(["com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop"])
 }

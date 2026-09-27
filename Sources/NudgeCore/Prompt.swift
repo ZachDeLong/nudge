@@ -3,6 +3,9 @@ import Foundation
 public enum PromptKind: String, Codable, Equatable {
     case permission
     case ask
+    /// The agent finished its turn while you were away from its terminal.
+    /// Shows its last message; a reply keeps the session going.
+    case finished
 }
 
 public struct Prompt: Codable, Equatable, Identifiable {
@@ -34,6 +37,10 @@ public struct Prompt: Codable, Equatable, Identifiable {
     /// Claude Code's `agent_id` when a subagent made the call; nil for the
     /// main thread.
     public let subagentId: String?
+    /// `CLAUDE_CODE_ENTRYPOINT` of the session: "cli" in a terminal,
+    /// "claude-desktop" in the Claude app. Tells the app which window shows
+    /// this session.
+    public let entrypoint: String?
 
     public init(
         id: String,
@@ -48,7 +55,8 @@ public struct Prompt: Codable, Equatable, Identifiable {
         detail: String? = nil,
         event: String? = nil,
         callKey: String? = nil,
-        subagentId: String? = nil
+        subagentId: String? = nil,
+        entrypoint: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -63,6 +71,7 @@ public struct Prompt: Codable, Equatable, Identifiable {
         self.event = event
         self.callKey = callKey
         self.subagentId = subagentId
+        self.entrypoint = entrypoint
     }
 
     public var resolvedKind: PromptKind { kind ?? .permission }

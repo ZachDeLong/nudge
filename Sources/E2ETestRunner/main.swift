@@ -124,6 +124,9 @@ final class HookRun {
             process.arguments = arguments
         }
         var env = NudgeInstance.environment(configDir: configDir ?? instance.configDir, testAPI: false)
+        // Run from inside a Claude session, the runner inherits its
+        // entrypoint; fixtures that need one say so.
+        env["CLAUDE_CODE_ENTRYPOINT"] = nil
         env.merge(extraEnv) { _, new in new }
         process.environment = env
         let stdin = Pipe()
@@ -227,6 +230,11 @@ struct Step {
     let args: [String]
     /// Extra environment for nudge-hook (NUDGE_HOOK_MAX_WAIT, say).
     let env: [String: String]
+    /// Which binary gets the payload: nudge-hook, or nudge-agent-hook for a
+    /// Stop that raises a finished message.
+    let hook: String
+    /// With respond "text": the reply typed into the finished message.
+    let replyText: String?
     /// Fields the queued prompt must have; nil = nothing may be queued.
     let expectPrompt: [String: Any]?
     /// "allow" | "deny" answer it through the app; "hangup" SIGTERMs the hook
@@ -256,6 +264,8 @@ struct Step {
         payload = try payloadData(obj["payload"], "\(context): payload")
         args = obj["args"] as? [String] ?? []
         env = obj["env"] as? [String: String] ?? [:]
+        hook = obj["hook"] as? String ?? "nudge-hook"
+        replyText = obj["replyText"] as? String
         agentArgs = obj["agentArgs"] as? [String] ?? []
         waitSeconds = (obj["waitSeconds"] as? NSNumber)?.doubleValue ?? 10
         expectPrompt = obj["expectPrompt"] as? [String: Any]
@@ -266,7 +276,7 @@ struct Step {
         agentEvent = obj["agentEvent"] == nil ? nil : try payloadData(obj["agentEvent"], "\(context): agentEvent")
         expectWithdrawn = obj["expectWithdrawn"] as? Bool ?? true
 
-        let responses = ["allow", "deny", "hangup", "reader-gone", "parent-killed", "agent-event", "wait"]
+        let responses = ["allow", "deny", "text", "cancel", "hangup", "reader-gone", "parent-killed", "agent-event", "wait"]
         if expectPrompt != nil {
             guard let respond, responses.contains(respond) else {
                 throw FixtureError("\(context): expectPrompt needs respond = \(responses.joined(separator: " | "))")
@@ -366,7 +376,7 @@ func run(_ step: Step, instance: NudgeInstance, binDir: URL, hookConfigDir: URL?
     do {
         hook = try HookRun(binDir: binDir, instance: instance, payload: step.payload,
                            viaShell: step.respond == "parent-killed", configDir: hookConfigDir,
-                           arguments: step.args, extraEnv: step.env)
+                           binary: step.hook, arguments: step.args, extraEnv: step.env)
     } catch {
         return ["couldn't start nudge-hook: \(error)"]
     }
@@ -525,7 +535,7 @@ func run(_ step: Step, instance: NudgeInstance, binDir: URL, hookConfigDir: URL?
     default:
         let decision = step.respond!
         do {
-            let status = try instance.resolve(id: id, decision: decision)
+            let status = try instance.resolve(id: id, decision: decision, text: step.replyText)
             if status != 200 { problems.append("resolve(\(decision)) returned HTTP \(status)") }
         } catch {
             problems.append("resolve(\(decision)) failed: \(error)")

@@ -150,8 +150,10 @@ final class NudgeInstance {
 
     /// Answers prompt `id` through the app's own queue. Returns the HTTP status
     /// (200 resolved, 409 not the head / no longer pending).
-    func resolve(id: String, decision: String) throws -> Int {
-        let body = try JSONSerialization.data(withJSONObject: ["id": id, "decision": decision])
+    func resolve(id: String, decision: String, text: String? = nil) throws -> Int {
+        var fields: [String: Any] = ["id": id, "decision": decision]
+        if let text { fields["text"] = text }
+        let body = try JSONSerialization.data(withJSONObject: fields)
         return try request("/test/resolve", body: body).status
     }
 

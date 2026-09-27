@@ -30,6 +30,7 @@ final class MenuBarController: NSObject {
     private var agentRefreshSequence: Int = 0
     private var keyMonitor: Any?
     private var appSwitchObserver: NSObjectProtocol?
+    private var finishedReleaseObserver: NSObjectProtocol?
     /// When global ⏎/esc may answer. See `armKeys()`.
     private var answerKeys = AnswerKeys()
     private var clickMonitor: Any?
@@ -45,6 +46,7 @@ final class MenuBarController: NSObject {
         super.init()
         store.prefs = settings
         configureStatusItem()
+        startReleasingFinishedOnReturn()
         Task { await self.subscribeToQueue() }
     }
 
@@ -206,6 +208,15 @@ final class MenuBarController: NSObject {
         skipItem.state = settings.skipWhenTerminalFocused ? .on : .off
         menu.addItem(skipItem)
 
+        let finishedItem = NSMenuItem(
+            title: "Tell me when Claude finishes",
+            action: #selector(toggleFinishedMessages),
+            keyEquivalent: ""
+        )
+        finishedItem.target = self
+        finishedItem.state = settings.finishedMessages ? .on : .off
+        menu.addItem(finishedItem)
+
         if GlobalKeys.isAvailable {
             let keysItem = NSMenuItem(
                 title: "Answer with ⏎ and esc",
@@ -284,6 +295,47 @@ final class MenuBarController: NSObject {
         }
     }
 
+    private func toggleFinishedMessagesAndRefresh() {
+        settings.finishedMessages.toggle()
+        settings.save()
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+            store.prefs = settings
+        }
+        // Off means off: let go of any session waiting on a reply.
+        if !settings.finishedMessages {
+            Task { [queue] in
+                for prompt in await queue.snapshot() where prompt.resolvedKind == .finished {
+                    _ = await queue.resolve(id: prompt.id, with: .cancel)
+                }
+            }
+        }
+        if panel.isVisible, currentPrompt == nil { animatedRefit() }
+    }
+
+    @objc private func toggleFinishedMessages() {
+        toggleFinishedMessagesAndRefresh()
+    }
+
+    /// A finished message holds its session (the Stop hook waits for your
+    /// reply), which is only fine while you're away from it. Switch to the
+    /// terminal or app showing that session and Nudge lets it go, so the
+    /// session is yours to type in.
+    private func startReleasingFinishedOnReturn() {
+        finishedReleaseObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [queue] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  let front = app.bundleIdentifier else { return }
+            Task {
+                for prompt in await queue.snapshot()
+                where prompt.resolvedKind == .finished
+                    && FrontmostApp.sessionUIBundleIDs(entrypoint: prompt.entrypoint).contains(front) {
+                    _ = await queue.resolve(id: prompt.id, with: .cancel)
+                }
+            }
+        }
+    }
+
     private func toggleGlobalKeysAndRefresh() {
         settings.globalKeys.toggle()
         settings.save()
@@ -315,6 +367,7 @@ final class MenuBarController: NSObject {
             onTogglePause: { [weak self] in self?.togglePauseAndRefresh() },
             onToggleSkipTerminal: { [weak self] in self?.toggleSkipTerminalAndRefresh() },
             onToggleGlobalKeys: { [weak self] in self?.toggleGlobalKeysAndRefresh() },
+            onToggleFinishedMessages: { [weak self] in self?.toggleFinishedMessagesAndRefresh() },
             onQuit: { [weak self] in self?.quitApp() },
             onEnableGlobalKeys: { [weak self] in self?.enableGlobalKeys() },
             agentChat: agentChat,
@@ -357,10 +410,14 @@ final class MenuBarController: NSObject {
         // composer and Esc-to-close all behave like a real menu bar extra.
         let isAsk = currentPrompt?.resolvedKind == .ask
         let isIdle = currentPrompt == nil
+        // A finished message can pop up mid-sentence in another app, so it
+        // never takes the keyboard: click its reply box to answer.
+        let isFinished = currentPrompt?.resolvedKind == .finished
         panel.show(
             content: buildPopoverView(),
             anchorTo: statusItem.button,
-            makeKey: isAsk || isIdle
+            makeKey: isAsk || isIdle,
+            keyable: isAsk || isIdle || isFinished
         )
         armKeys()
         store.globalKeysAvailable = GlobalKeys.isAvailable
@@ -504,7 +561,11 @@ final class MenuBarController: NSObject {
     private func refreshVisiblePanel() {
         let isAsk = currentPrompt?.resolvedKind == .ask
         let isIdle = currentPrompt == nil
-        panel.setKeyable(isAsk || isIdle)
+        let isFinished = currentPrompt?.resolvedKind == .finished
+        panel.setKeyable(isAsk || isIdle || isFinished)
+        // Swapped in under a panel you were typing in (a chat, an ask): hand
+        // the keyboard back, or your next ⏎ would send your text to Claude.
+        if isFinished { panel.resignKey() }
         armKeys()
         animatedRefit()
         if currentPrompt?.resolvedKind == .permission { startPulse() } else { stopPulse() }
@@ -523,13 +584,14 @@ final class MenuBarController: NSObject {
     /// until the removal transition ends.
     private func animatedRefit() {
         let makeKey = currentPrompt == nil || currentPrompt?.resolvedKind == .ask
-        DispatchQueue.main.async { [weak self] in self?.refitNow(makeKey: makeKey) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.refitNow(makeKey: makeKey) }
+        let keyable = makeKey || currentPrompt?.resolvedKind == .finished
+        DispatchQueue.main.async { [weak self] in self?.refitNow(makeKey: makeKey, keyable: keyable) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.refitNow(makeKey: makeKey, keyable: keyable) }
     }
 
-    private func refitNow(makeKey: Bool) {
+    private func refitNow(makeKey: Bool, keyable: Bool) {
         guard panel.isVisible else { return }
-        panel.refit(anchorTo: statusItem.button, makeKey: makeKey, animated: true)
+        panel.refit(anchorTo: statusItem.button, makeKey: makeKey, keyable: keyable, animated: true)
     }
 
     // MARK: - Decision handlers
@@ -921,20 +983,25 @@ final class PromptPanel {
     /// the app you were in, where only the guarded global monitor hears them.
     func setKeyable(_ flag: Bool) {
         (panel as? KeyablePanel)?.allowsKey = flag
-        if !flag, panel.isKeyWindow {
-            panel.orderOut(nil)
-            panel.orderFrontRegardless()
-        }
+        if !flag { resignKey() }
+    }
+
+    /// Gives the keyboard back to the app you were in, and leaves the panel
+    /// able to take key again if you click it.
+    func resignKey() {
+        guard panel.isKeyWindow else { return }
+        panel.orderOut(nil)
+        panel.orderFrontRegardless()
     }
 
     /// Re-measures SwiftUI content after ObservableObject changes. This keeps
     /// async chat-detail loads from being clipped by the shorter placeholder
     /// panel that was measured before tmux capture finished. `animated` eases
     /// the frame to the new size in step with the content's own transition.
-    func refit(anchorTo button: NSStatusBarButton?, makeKey: Bool = false, animated: Bool = false) {
+    func refit(anchorTo button: NSStatusBarButton?, makeKey: Bool = false, keyable: Bool? = nil, animated: Bool = false) {
         guard panel.isVisible else { return }
-        if let keyable = panel as? KeyablePanel {
-            keyable.allowsKey = makeKey
+        if let panel = panel as? KeyablePanel {
+            panel.allowsKey = keyable ?? makeKey
         }
 
         hosting.view.layoutSubtreeIfNeeded()
@@ -962,7 +1029,10 @@ final class PromptPanel {
         }
     }
 
-    func show(content: PopoverView, anchorTo button: NSStatusBarButton?, makeKey: Bool = false) {
+    /// `keyable` lets the panel take key when clicked without taking it now
+    /// (a finished message: its reply box works, but it never grabs the
+    /// keyboard from whatever you're typing in). Defaults to `makeKey`.
+    func show(content: PopoverView, anchorTo button: NSStatusBarButton?, makeKey: Bool = false, keyable: Bool? = nil) {
         hosting.rootView = AnyView(
             content
                 .clipShape(RoundedRectangle(cornerRadius: PopoverView.cornerRadius, style: .continuous))
@@ -985,8 +1055,8 @@ final class PromptPanel {
         // popovers stay non-keyable so SwiftUI Menu interactions can't
         // trigger a focus grab (which left Allow stuck in its blue
         // "default action keyed" appearance after the menu closed).
-        if let keyable = panel as? KeyablePanel {
-            keyable.allowsKey = makeKey
+        if let panel = panel as? KeyablePanel {
+            panel.allowsKey = keyable ?? makeKey
         }
         panel.orderFrontRegardless()
         if makeKey {

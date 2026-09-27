@@ -220,7 +220,7 @@ enum PreviewRenderer {
                 state: state,
                 onAllow: {}, onDeny: {}, onAlwaysAllow: {}, onSessionAllow: {},
                 onSubmitText: { _ in }, onCancelAsk: {},
-                onTogglePause: {}, onToggleSkipTerminal: {}, onToggleGlobalKeys: {}, onQuit: {},
+                onTogglePause: {}, onToggleSkipTerminal: {}, onToggleGlobalKeys: {}, onToggleFinishedMessages: {}, onQuit: {},
                 onEnableGlobalKeys: {},
                 agentChat: store,
                 onRefreshAgentSessions: {}, onSelectAgentSession: { _ in },

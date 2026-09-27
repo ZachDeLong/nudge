@@ -1,0 +1,30 @@
+{
+  "description": "Dismissing a finished message lets Claude stop as usual (no output)",
+  "patterns": [],
+  "hook": "nudge-agent-hook",
+  "env": {
+    "CLAUDE_CODE_ENTRYPOINT": "cli",
+    "NUDGE_TEST_FRONTMOST": "com.google.Chrome"
+  },
+  "payload": {
+    "session_id": "5c1b2f7e-9a44-4d1e-b8a1-3e2f6c0d9b17",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/5c1b2f7e-9a44-4d1e-b8a1-3e2f6c0d9b17.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "auto",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "Pushed the fix to origin/main. CI is running."
+  },
+  "expectPrompt": {
+    "kind": "finished",
+    "tool": "Stop",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "5c1b2f7e-9a44-4d1e-b8a1-3e2f6c0d9b17",
+    "command": "Pushed the fix to origin/main. CI is running.",
+    "event": "Stop",
+    "entrypoint": "cli"
+  },
+  "respond": "cancel",
+  "expectStdout": null,
+  "expectExit": 0
+}

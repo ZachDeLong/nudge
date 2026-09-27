@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import NudgeCore
 import NudgeHookCore
@@ -60,6 +61,49 @@ do {
     // Observability hook only: never block or perturb Claude Code.
 }
 
+// MARK: - "Claude finished" (Stop)
+
+// When Claude finishes while you're off in another app, show its last message
+// with a reply box, and hold this hook until you answer. A reply answers the
+// Stop hook with "block", so Claude carries on with it; anything else lets
+// Claude stop as usual. The app lets go of it as soon as you switch back to
+// the session's terminal, and the queue gives up after five minutes.
+let prefs = Prefs.load()
+let entrypoint = env["CLAUDE_CODE_ENTRYPOINT"]
+// The harness pins the front app, which is otherwise whatever is on the Mac
+// running the tests. Only honored on a harness instance.
+let frontmost = (ConfigDir.isOverridden ? env["NUDGE_TEST_FRONTMOST"] : nil)
+    ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+let atSession = frontmost.map(FrontmostApp.sessionUIBundleIDs(entrypoint: entrypoint).contains) ?? false
+guard prefs.finishedMessages,
+      shouldOfferFinishedMessage(agent: agent, eventName: eventName, entrypoint: entrypoint,
+                                 isSubagent: event.subagentID != nil, userIsAtSession: atSession) else {
+    exit(0)
+}
+
+let finished = Prompt(
+    id: UUID().uuidString,
+    kind: .finished,
+    tool: "Stop",
+    command: finishedMessageText(string(inputJSON["last_assistant_message"])),
+    cwd: event.cwd ?? FileManager.default.currentDirectoryPath,
+    sessionId: event.claudeSessionID ?? "unknown",
+    permissionMode: event.permissionMode,
+    event: "Stop",
+    entrypoint: entrypoint
+)
+
+// If Claude gives up on the hook (you quit it), stop holding the message.
+CallerWatch.exitWhenCallerGone()
+
+guard let reply = try? NudgeClient.postPrompt(finished, to: "/prompt", port: port),
+      reply.decision == .text,
+      let text = reply.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+    exit(0)
+}
+if let data = try? JSONSerialization.data(withJSONObject: stopReplyOutput(reply: text)) {
+    FileHandle.standardOutput.write(data)
+}
 exit(0)
 
 private func string(_ value: Any?) -> String? {

@@ -642,6 +642,21 @@ expect(HookAgent.codex.hostAppBundleIDs(environment: [:]).contains("com.openai.c
 expect(HookAgent.claude.hostAppBundleIDs(environment: [:]).isEmpty, true, "protocol: for a terminal Claude session only the terminal list counts as its own UI")
 expect(HookAgent.claude.hostAppBundleIDs(environment: ["CLAUDE_CODE_ENTRYPOINT": "cli"]).isEmpty, true, "protocol: CLI entrypoint doesn't count the Claude app")
 expect(HookAgent.claude.hostAppBundleIDs(environment: ["CLAUDE_CODE_ENTRYPOINT": "claude-desktop"]), ["com.anthropic.claudefordesktop"], "protocol: a Claude app session counts the Claude app as its own UI")
+// Finished messages: only interactive Claude sessions, main thread, away from them.
+expect(shouldOfferFinishedMessage(agent: .claude, eventName: "Stop", entrypoint: "cli", isSubagent: false, userIsAtSession: false), true, "finished: terminal session, you're elsewhere")
+expect(shouldOfferFinishedMessage(agent: .claude, eventName: "Stop", entrypoint: "cli", isSubagent: false, userIsAtSession: true), false, "finished: you're at the terminal, so nothing")
+expect(shouldOfferFinishedMessage(agent: .claude, eventName: "Stop", entrypoint: "sdk-cli", isSubagent: false, userIsAtSession: false), false, "finished: claude -p never waits on you")
+expect(shouldOfferFinishedMessage(agent: .claude, eventName: "Stop", entrypoint: nil, isSubagent: false, userIsAtSession: false), false, "finished: unknown entrypoint stays out of the way")
+expect(shouldOfferFinishedMessage(agent: .claude, eventName: "Stop", entrypoint: "claude-desktop", isSubagent: false, userIsAtSession: false), true, "finished: Claude app session")
+expect(shouldOfferFinishedMessage(agent: .claude, eventName: "Stop", entrypoint: "cli", isSubagent: true, userIsAtSession: false), false, "finished: subagents don't count")
+expect(shouldOfferFinishedMessage(agent: .claude, eventName: "PostToolUse", entrypoint: "cli", isSubagent: false, userIsAtSession: false), false, "finished: only on Stop")
+expect(shouldOfferFinishedMessage(agent: .codex, eventName: "Stop", entrypoint: "cli", isSubagent: false, userIsAtSession: false), false, "finished: Claude only for now")
+expect(finishedMessageText("  Pushed to origin/main.\n"), "Pushed to origin/main.", "finished: message trimmed")
+expect(finishedMessageText(nil), "Claude finished its turn.", "finished: no message still says something")
+expect(finishedMessageText(String(repeating: "a", count: 5000)).count, 4001, "finished: long messages capped")
+expect(stopReplyOutput(reply: "now open a PR")["decision"] as? String, "block", "finished: a reply keeps Claude going")
+expect(stopReplyOutput(reply: "now open a PR")["reason"] as? String, "The user replied from Nudge: now open a PR", "finished: the reply reaches Claude as its reason")
+
 do {
     let out = askInAgentUIOutput(pattern: "Bash(git push:*)")["hookSpecificOutput"] as? [String: String]
     expect(out?["hookEventName"], "PreToolUse", "protocol: hand-back answers PreToolUse")

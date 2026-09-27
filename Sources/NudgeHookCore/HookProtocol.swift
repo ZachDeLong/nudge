@@ -117,6 +117,39 @@ public func nudgeAsks(event: HookEvent, permissionMode: String) -> Bool {
 /// the agent's own UI.
 public let toolsLeftToAgentUI: Set<String> = ["ExitPlanMode", "AskUserQuestion"]
 
+// MARK: - Finished messages (Stop hook)
+
+/// Sessions a person is driving: a terminal, the Claude app, VS Code. Scripted
+/// runs (`claude -p` is "sdk-cli", SDK apps "sdk-ts"/"sdk-py") never get a
+/// finished message, so Nudge can't hold up automation.
+public let interactiveEntrypoints: Set<String> = ["cli", "claude-desktop", "claude-vscode"]
+
+/// Whether a Stop should become a "Claude finished" message: Claude only (the
+/// Codex hook isn't wired), an interactive session, the main thread, and
+/// you're not looking at the session already.
+public func shouldOfferFinishedMessage(agent: HookAgent, eventName: String, entrypoint: String?,
+                                       isSubagent: Bool, userIsAtSession: Bool) -> Bool {
+    agent == .claude
+        && eventName == "Stop"
+        && !isSubagent
+        && interactiveEntrypoints.contains(entrypoint ?? "")
+        && !userIsAtSession
+}
+
+/// What the popover shows: Claude's last message, trimmed and capped.
+public func finishedMessageText(_ lastAssistantMessage: String?, agentName: String = "Claude") -> String {
+    let text = (lastAssistantMessage ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return "\(agentName) finished its turn." }
+    return text.count > 4000 ? String(text.prefix(4000)) + "…" : text
+}
+
+/// Answers the Stop hook with your reply. "block" means Claude doesn't stop:
+/// it reads the reason as its next instruction and carries on in the same
+/// session (checked on Claude Code 2.1.283).
+public func stopReplyOutput(reply: String) -> [String: Any] {
+    ["decision": "block", "reason": "The user replied from Nudge: \(reply)"]
+}
+
 /// A pattern matched while you're looking at the agent's own UI: have Claude
 /// ask there instead of Nudge. Staying silent would let the call run unasked,
 /// which is the opposite of what a pattern is for.
