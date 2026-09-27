@@ -3,27 +3,37 @@ import NudgeCore
 
 /// In-memory allow list for "Allow this session" decisions. Reset on app quit.
 ///
-/// Keyed on agent, tool *and* command. The command string alone is ambiguous
-/// across families — `Bash` carries a shell command while `Edit`/`Write` carry
-/// a file path — so a bare string key lets an allow granted for one tool
-/// satisfy a prompt from another. The agent is in the key so allowing a
-/// command for Codex doesn't also allow it for Claude, or the other way round.
+/// Keyed on session, agent, tool *and* command. The session keeps an allow
+/// from spilling into other sessions and projects that run the same command.
+/// The command string alone is ambiguous across families — `Bash` carries a
+/// shell command while `Edit`/`Write` carry a file path — so a bare string
+/// key lets an allow granted for one tool satisfy a prompt from another. The
+/// agent is in the key so allowing a command for Codex doesn't also allow it
+/// for Claude, or the other way round.
 @MainActor
 final class SessionAllowList {
     private struct Key: Hashable {
+        let session: String
         let agent: String
         let tool: String
         let command: String
+
+        init(_ prompt: Prompt) {
+            session = prompt.sessionId
+            agent = prompt.agent ?? "claude"
+            tool = prompt.tool
+            command = prompt.command
+        }
     }
 
     private var allowed: Set<Key> = []
 
-    func add(agent: String?, tool: String, command: String) {
-        allowed.insert(Key(agent: agent ?? "claude", tool: tool, command: command))
+    func add(_ prompt: Prompt) {
+        allowed.insert(Key(prompt))
     }
 
-    func contains(agent: String?, tool: String, command: String) -> Bool {
-        allowed.contains(Key(agent: agent ?? "claude", tool: tool, command: command))
+    func contains(_ prompt: Prompt) -> Bool {
+        allowed.contains(Key(prompt))
     }
 
     func clear() {
@@ -57,9 +67,12 @@ enum PersistentAllowList {
     /// is the real safety net — it also covers the read-modify-write race with
     /// a concurrent Claude Code write, which this can't otherwise detect.
     @discardableResult
-    static func addRule(_ rule: String, at url: URL = defaultSettingsURL) throws -> WriteResult {
+    static func addRule(_ rule: String, at link: URL = defaultSettingsURL) throws -> WriteResult {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .skippedEmpty }
+        // Write through a symlinked settings.json (dotfile repos) instead of
+        // replacing the link with a plain file.
+        let url = link.resolvingSymlinksInPath()
 
         guard let data = try? Data(contentsOf: url) else {
             throw WriteError.settingsMissing

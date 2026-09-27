@@ -115,21 +115,22 @@ struct PopoverView: View {
           } else {
           HStack(spacing: 8) {
             // Permission panels never take key, so the keycaps are only
-            // true when the global monitor can hear them.
+            // true when the global monitor can hear them. No
+            // .keyboardShortcut here: if the panel was still key from a chat
+            // or an ask when this prompt swapped in, ⏎ would press Allow
+            // straight away, past AnswerKeys' guards.
             let keys = state.globalKeysAvailable && state.prefs.globalKeys
             Button(action: onDeny) {
                 ButtonLabel(title: "Deny", key: keys ? "esc" : nil)
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
-            .keyboardShortcut(.cancelAction)
 
             Button(action: onAllow) {
                 ButtonLabel(title: "Allow", key: keys ? "⏎" : nil, weight: .semibold, prominent: true)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
 
             if offerOptions {
                 Menu {

@@ -29,6 +29,7 @@ final class MenuBarController: NSObject {
     private var agentRefreshTimer: Timer?
     private var agentRefreshSequence: Int = 0
     private var keyMonitor: Any?
+    private var appSwitchObserver: NSObjectProtocol?
     /// When global ⏎/esc may answer. See `armKeys()`.
     private var answerKeys = AnswerKeys()
     private var clickMonitor: Any?
@@ -429,7 +430,7 @@ final class MenuBarController: NSObject {
         // Auto-resolve via session allow list before any UI (permission only).
         if let prompt = prompt,
            prompt.resolvedKind == .permission,
-           sessionAllow.contains(agent: prompt.agent, tool: prompt.tool, command: prompt.command) {
+           sessionAllow.contains(prompt) {
             Task { await queue.resolve(id: prompt.id, with: .allow) }
             return
         }
@@ -594,13 +595,13 @@ final class MenuBarController: NSObject {
         }
         // Also session-allow this exact command so it doesn't re-prompt within
         // the same Claude Code session (Claude caches settings.json at start).
-        sessionAllow.add(agent: prompt.agent, tool: prompt.tool, command: prompt.command)
+        sessionAllow.add(prompt)
         resolve(.allow)
     }
 
     private func sessionAllowCurrent() {
         guard let prompt = currentPrompt else { return }
-        sessionAllow.add(agent: prompt.agent, tool: prompt.tool, command: prompt.command)
+        sessionAllow.add(prompt)
         resolve(.allow)
     }
 
@@ -646,13 +647,24 @@ final class MenuBarController: NSObject {
             guard let self, self.panel.isVisible else { return }
             let isAllow = event.keyCode == 36 || event.keyCode == 76
             let isDeny = event.keyCode == 53
-            guard (isAllow || isDeny), Self.isBareKeyPress(event) else {
+            // In a terminal or the agent's own app, ⏎ and esc answer the
+            // agent's dialog there (maybe another session's, maybe "No"),
+            // never Nudge's.
+            let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            let inAgentApp = front.map(FrontmostApp.ownPromptBundleIDs.contains) ?? false
+            guard isAllow || isDeny, Self.isBareKeyPress(event), !inAgentApp else {
                 // Typing somewhere else: hold off until it stops.
                 self.answerKeys.typed(at: Date())
                 return
             }
             guard self.answerKeys.isArmed(at: Date()) else { return }
             DispatchQueue.main.async { self.resolve(isAllow ? .allow : .deny) }
+        }
+        // ⏎ right after switching apps was meant for the app you switched to.
+        appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.answerKeys.typed(at: Date()) }
         }
     }
 
@@ -679,6 +691,10 @@ final class MenuBarController: NSObject {
 
     private func stopKeyMonitor() {
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
+        if let o = appSwitchObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(o)
+            appSwitchObserver = nil
+        }
     }
 
     // MARK: - Esc closes the idle popover
@@ -883,10 +899,17 @@ final class PromptPanel {
     private static let fallbackContentSize = NSSize(width: 420, height: 200)
 
     /// Flips key-window eligibility for content that changed under a visible
-    /// panel. Does not resign key — AppKit has no clean way to, and a panel
-    /// that stays key until it hides is what happened before as well.
+    /// panel. Turning it off while the panel is key (a permission prompt
+    /// replacing a chat or an ask) also gives up key: AppKit has no direct
+    /// way to resign, but ordering a key window out does it, and it can't
+    /// take key back when it comes front again. Keystrokes then go back to
+    /// the app you were in, where only the guarded global monitor hears them.
     func setKeyable(_ flag: Bool) {
         (panel as? KeyablePanel)?.allowsKey = flag
+        if !flag, panel.isKeyWindow {
+            panel.orderOut(nil)
+            panel.orderFrontRegardless()
+        }
     }
 
     /// Re-measures SwiftUI content after ObservableObject changes. This keeps
