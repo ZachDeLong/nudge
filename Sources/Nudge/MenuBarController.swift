@@ -62,6 +62,21 @@ final class MenuBarController: NSObject {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
+    /// The status bar places SF Symbol images by their baseline, which put
+    /// `hand.tap` (raised finger) 2.75pt above the system icons (measured on
+    /// a Retina menu bar: centre row 27px vs 32.5px). Redrawn into a plain
+    /// image of the same size, it's centred like they are (32.5px).
+    private static func opticallyCentered(_ image: NSImage, template: Bool) -> NSImage {
+        let size = image.size
+        let canvas = NSImage(size: size, flipped: false) { rect in
+            image.draw(in: rect)
+            return true
+        }
+        canvas.isTemplate = template
+        canvas.accessibilityDescription = image.accessibilityDescription
+        return canvas
+    }
+
     /// Updates the menu bar icon based on enabled state and current prompt.
     /// `arrived` = a new prompt just landed: bounce the glyph so the eye goes
     /// to the menu bar even from another app.
@@ -100,13 +115,11 @@ final class MenuBarController: NSObject {
             // color as a SymbolConfiguration is more reliable.
             let config = NSImage.SymbolConfiguration(hierarchicalColor: color)
             let tinted = baseImg.withSymbolConfiguration(config) ?? baseImg
-            tinted.isTemplate = false
-            button.image = tinted
+            button.image = Self.opticallyCentered(tinted, template: false)
             button.contentTintColor = nil
         } else {
             // Adaptive: let the menu bar tint based on appearance.
-            baseImg.isTemplate = true
-            button.image = baseImg
+            button.image = Self.opticallyCentered(baseImg, template: true)
             button.contentTintColor = nil
         }
 
@@ -982,8 +995,9 @@ final class PromptPanel {
             let reserve = max(NSStatusBar.system.thickness, 32)
             menuBarBottomY = screen.frame.maxY - reserve
         }
-        // Sit close under the menu bar like macOS Control Center popovers do.
-        let originY = menuBarBottomY - size.height - 14
+        // Flush under the menu bar like the system's own menu bar panels
+        // (Wi-Fi and Bluetooth start 0.5pt below it; measured on macOS 27).
+        let originY = menuBarBottomY - size.height - 0.5
         return NSPoint(x: originX, y: originY)
     }
 
