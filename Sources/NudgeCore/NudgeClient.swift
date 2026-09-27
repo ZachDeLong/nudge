@@ -14,7 +14,7 @@ public enum NudgeClient {
         portFileURL: URL = PortFile.defaultURL,
         launchTimeout: TimeInterval = 2.0,
         autoLaunchMarkerURL: URL = AutoLaunch.markerURL,
-        appName: String = "Nudge"
+        appName: String? = nil
     ) -> UInt16? {
         if let port = readPort(from: portFileURL), probe(port: port) {
             return port
@@ -93,14 +93,27 @@ public enum NudgeClient {
         return result == 0
     }
 
+    /// What `open` starts: the bundle this helper ships in, or failing that
+    /// the bundle ID. Never a bare name, which LaunchServices can resolve to
+    /// a different app called Nudge (MacAdmins' update nag is common on
+    /// managed Macs). `appName` is for tests.
+    static func launchArguments(appName: String?) -> [String] {
+        if let appName { return ["-ga", appName] }
+        if let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() {
+            let app = exe.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            if app.pathExtension == "app" { return ["-g", app.path] }
+        }
+        return ["-gb", "com.zachdelong.Nudge"]
+    }
+
     private static func launchAndWaitForPort(
         portFileURL: URL,
         timeout: TimeInterval,
-        appName: String
+        appName: String?
     ) -> UInt16? {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        p.arguments = ["-ga", appName]
+        p.arguments = launchArguments(appName: appName)
         // Discard `open`'s "Unable to find application named 'Nudge'" so an
         // uninstalled bundle doesn't spray stderr into Claude's hook log on
         // every tool call.

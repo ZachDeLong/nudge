@@ -102,8 +102,12 @@ if [[ -f "$HOOKS" ]]; then
         rm -f "$OLD"
     done
 fi
-printf '%s\n' "$UPDATED" > "$HOOKS.tmp"
-mv "$HOOKS.tmp" "$HOOKS"
+# Write through a symlinked hooks.json and keep the file's permissions.
+TARGET="$HOOKS"
+[[ -e "$HOOKS" ]] && TARGET="$(realpath "$HOOKS")"
+printf '%s\n' "$UPDATED" > "$TARGET.tmp"
+[[ -f "$TARGET" ]] && chmod "$(stat -f %Lp "$TARGET")" "$TARGET.tmp"
+mv "$TARGET.tmp" "$TARGET"
 
 if [[ $UNINSTALL -eq 1 ]]; then
     echo "✓ Removed Nudge's hooks from $HOOKS"

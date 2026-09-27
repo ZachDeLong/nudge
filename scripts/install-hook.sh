@@ -31,8 +31,12 @@ fi
 # Validate current JSON.
 jq -e . "$SETTINGS" > /dev/null
 
+# Write through a symlinked settings.json (dotfile repos) instead of replacing
+# the link, and keep the file's permissions.
+TARGET="$(realpath "$SETTINGS")"
+
 BACKUP="$SETTINGS.bak.$(date +%s)"
-cp "$SETTINGS" "$BACKUP"
+cp -p "$TARGET" "$BACKUP"
 
 # Prune old backups: keep the 5 most recent. Without this, every install
 # leaves another `settings.json.bak.NNNN` behind forever. Bash 3.2 (macOS
@@ -65,8 +69,11 @@ jq \
   --arg agentCmd "$AGENT_HOOK_CMD" \
   --arg matcher "$MATCHER" \
   '
+    # Only the Nudge handlers go. Anything else sharing a group with
+    # them stays; a group left empty goes too.
     def strip_nudge:
-      map(select((.hooks // []) | all(.command != $cmd and .command != $agentCmd)));
+      map(.hooks = ((.hooks // []) | map(select(.command != $cmd and .command != $agentCmd))))
+      | map(select(.hooks | length > 0));
 
     .hooks //= {} |
     .hooks.PreToolUse //= [] |
@@ -106,11 +113,12 @@ jq \
         "hooks": [{ "type": "command", "command": $agentCmd }]
       }]
     )
-  ' "$SETTINGS" > "$SETTINGS.tmp"
+  ' "$TARGET" > "$TARGET.tmp"
 
 # Validate before replacing.
-jq -e . "$SETTINGS.tmp" > /dev/null
-mv "$SETTINGS.tmp" "$SETTINGS"
+jq -e . "$TARGET.tmp" > /dev/null
+chmod "$(stat -f %Lp "$TARGET")" "$TARGET.tmp"
+mv "$TARGET.tmp" "$TARGET"
 
 echo "✓ Installed Nudge hooks (approval prompts + pattern matcher: $MATCHER) into $SETTINGS"
 echo "  Active patterns: $PATTERN_COUNT (read from $PATTERNS at hook time)"

@@ -17,12 +17,18 @@ if [[ ! -f "$SETTINGS" ]]; then
     exit 0
 fi
 
+# Write through a symlinked settings.json and keep the file's permissions.
+TARGET="$(realpath "$SETTINGS")"
+
 BACKUP="$SETTINGS.bak.$(date +%s)"
-cp "$SETTINGS" "$BACKUP"
+cp -p "$TARGET" "$BACKUP"
 
 jq --arg cmd "$HOOK_CMD" --arg agentCmd "$AGENT_HOOK_CMD" '
+  # Only the Nudge handlers go. Anything else sharing a group with them
+  # stays; a group left empty goes too.
   def strip_nudge:
-    map(select((.hooks // []) | all(.command != $cmd and .command != $agentCmd)));
+    map(.hooks = ((.hooks // []) | map(select(.command != $cmd and .command != $agentCmd))))
+    | map(select(.hooks | length > 0));
 
   if .hooks then
     reduce ["PreToolUse", "PermissionRequest", "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Notification", "Stop", "StopFailure", "SessionEnd"][] as $event (.;
@@ -33,9 +39,10 @@ jq --arg cmd "$HOOK_CMD" --arg agentCmd "$AGENT_HOOK_CMD" '
     ) |
     if (.hooks | length) == 0 then del(.hooks) else . end
   else . end
-' "$SETTINGS" > "$SETTINGS.tmp"
+' "$TARGET" > "$TARGET.tmp"
 
-jq -e . "$SETTINGS.tmp" > /dev/null
-mv "$SETTINGS.tmp" "$SETTINGS"
+jq -e . "$TARGET.tmp" > /dev/null
+chmod "$(stat -f %Lp "$TARGET")" "$TARGET.tmp"
+mv "$TARGET.tmp" "$TARGET"
 echo "✓ Removed Nudge hooks from $SETTINGS"
 echo "  Backup: $BACKUP"

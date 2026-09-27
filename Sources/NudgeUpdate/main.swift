@@ -184,7 +184,8 @@ guard FileManager.default.fileExists(atPath: stagedApp.path) else {
 print("Quitting running Nudge…")
 let kill = Process()
 kill.launchPath = "/usr/bin/pkill"
-kill.arguments = ["-x", "Nudge"]
+// By path, not name: another app called Nudge may be running.
+kill.arguments = ["-f", "^" + NSRegularExpression.escapedPattern(for: appPath + "/Contents/MacOS/Nudge") + "( |$)"]
 try? kill.run()
 kill.waitUntilExit()
 // pkill exits 1 when no process matched; fine either way.
@@ -217,7 +218,7 @@ refreshPathSymlinks()
 print("Relaunching Nudge…")
 let open = Process()
 open.launchPath = "/usr/bin/open"
-open.arguments = ["-ga", "Nudge"]
+open.arguments = ["-g", appPath]
 try? open.run()
 // Don't waitUntilExit — open returns immediately and the new app stays running.
 

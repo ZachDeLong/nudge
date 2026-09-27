@@ -23,7 +23,14 @@ case "${1:-}" in
         "$here/seed-patterns.sh"
         "$here/install-hook.sh"
         "$here/install-codex-hook.sh"
-        open -ga Nudge 2>/dev/null || true
+        # Open this bundle (or failing that the bundle ID), never the name:
+        # other apps are called Nudge too.
+        app="$(cd "$here/../../.." && pwd)"
+        if [[ "$app" == *.app ]]; then
+            open -g "$app" 2>/dev/null || true
+        else
+            open -gb com.zachdelong.Nudge 2>/dev/null || true
+        fi
         echo "✓ Nudge is connected. Its icon is in the menu bar."
         ;;
     --remove)

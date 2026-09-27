@@ -24,7 +24,7 @@ install: build
 	@echo "→ Building app bundle…"
 	./scripts/build-app.sh $(BUILD_DIR)
 	@echo "→ Copying to /Applications…"
-	-pkill -x Nudge 2>/dev/null || true
+	-pkill -f '^$(APP_DEST)/Contents/MacOS/Nudge' 2>/dev/null || true
 	rm -rf $(APP_DEST)
 	cp -R $(BUILD_DIR)/Nudge.app $(APP_DEST)
 	xattr -dr com.apple.quarantine $(APP_DEST) 2>/dev/null || true
@@ -64,6 +64,7 @@ test:
 	fi
 	swift build --product nudge-test-matching -c $(CONFIG)
 	$(BUILD_DIR)/nudge-test-matching
+	./Tests/install/claude-hook-test.sh
 	./Tests/install/codex-hook-test.sh
 
 # End-to-end: recorded Claude Code hook payloads through the real nudge-hook
@@ -127,7 +128,7 @@ icon:
 	swift scripts/render-icon.swift
 
 uninstall:
-	-pkill -x Nudge 2>/dev/null || true
+	-pkill -f '^$(APP_DEST)/Contents/MacOS/Nudge' 2>/dev/null || true
 	rm -rf $(APP_DEST)
 	rm -f $(HOME)/.config/nudge/port $(HOME)/.config/nudge/token $(HOME)/.config/nudge/no-autolaunch
 	@./scripts/link-cli.sh --uninstall
