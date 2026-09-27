@@ -1,6 +1,6 @@
 # Patterns
 
-`~/.config/nudge/patterns.txt` controls which Claude Code tool calls Nudge prompts on. One rule per line; `#` lines are comments. The hook re-reads the file on every call, so edits take effect immediately — no restart needed.
+Nudge already shows every prompt Claude Code itself would show. `~/.config/nudge/patterns.txt` adds tool calls to ask about even when Claude wouldn't: a command you've allow-listed, or anything in auto mode. Patterns ask in every permission mode except `bypassPermissions`. One rule per line; `#` lines are comments. The hook re-reads the file on every call, so edits take effect immediately — no restart needed.
 
 ## Syntax
 
@@ -48,7 +48,7 @@ The PreToolUse hook matcher includes `mcp__.*` so all MCP calls reach Nudge; the
 
 ## "Always allow"
 
-Each popover has a `⋯` button next to Allow with two options:
+Each popover has a `⋯` button next to Allow. Pattern prompts get both options below; Claude's own prompts only get the first:
 
 - **Allow for this session** — adds the exact command to an in-memory list, won't ask again until Nudge restarts.
 - **Always allow this command** — promotes the matched pattern into `~/.claude/settings.json`'s `permissions.allow`. Claude auto-allows the whole class going forward; Nudge stops prompting.

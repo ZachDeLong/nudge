@@ -4,7 +4,9 @@ Claude Code permission prompts, in your menu bar.
 
 When Claude stops to ask before running something (a `git push --force`, an edit to a config file), Nudge pops a panel out of the menu bar so you can click Allow from whatever app you're in. You don't have to go find the terminal.
 
-It's a quality-of-life tool, not a security tool. Nudge only steps in for tool calls that match patterns you've listed, and everything else goes through Claude Code's normal flow.
+Nudge asks exactly when Claude Code would ask. If an allow rule or auto mode already covers a call, you don't see it. Plan approvals and Claude's multiple-choice questions stay in the terminal.
+
+It's a quality-of-life tool, not a security tool. The terminal still works: answer there and Nudge's copy goes away.
 
 ![Nudge asking to allow a git push, under its menu bar icon](./docs/img/hero.png)
 
@@ -47,7 +49,7 @@ open -ga Nudge
 
 ## Patterns
 
-Nudge only steps in for tool calls that match `~/.config/nudge/patterns.txt`. There's one rule per line, and edits apply immediately.
+Patterns are for things you want to be asked about even when Claude wouldn't ask, like a command you've allow-listed or anything in auto mode. They live in `~/.config/nudge/patterns.txt`, one rule per line, and edits apply immediately. An empty file is fine: Nudge still shows Claude's own prompts.
 
 ```
 Bash(git push:*)        # prefix
@@ -111,14 +113,32 @@ nudge-update --apply   # download, verify sha256, swap, relaunch
 
 `--apply` won't install a download that doesn't match the release's published checksum.
 
+Updating from 1.3.x or earlier: the first time the new Nudge starts, it adds its `PermissionRequest` hook to `~/.claude/settings.json`, after backing the file up. It only does this once, and only if Nudge's other hooks are already there. If you take the entry out, it stays out.
+
 ## How it works
 
-A `PreToolUse` hook checks each tool call against your patterns. On a match, it hands the prompt to the menu bar app and waits for your answer. If Nudge isn't running, the hook starts it, and if anything fails, Claude asks in the terminal as usual.
+Two hooks hand prompts to the menu bar app and wait for your answer:
+
+- `PermissionRequest` fires when Claude Code is about to show its own permission prompt. Nudge shows it too, and whichever you answer first wins.
+- `PreToolUse` fires on every tool call. Nudge only asks there if the call matches one of your patterns.
+
+A third hook, `nudge-agent-hook`, tells Nudge when a tool call finished or Claude's turn ended, so a prompt you answered in the terminal leaves the menu bar.
+
+If Nudge isn't running, the hooks start it. If anything fails, Claude asks in the terminal as usual.
+
+Which modes Nudge asks in:
+
+- Claude's own prompts come through in every mode they happen in. In auto mode that's rare: ask rules, and calls the classifier won't decide. In `dontAsk` mode Claude never asks, so Nudge doesn't either.
+- Patterns ask in every mode except `bypassPermissions`.
+
+If you allow a pattern prompt and an ask rule covers the same command, Claude asks again right after. Nudge answers that second one for you instead of showing it twice.
 
 ## Known limits
 
 - **Unsigned.** No notarization, so the pre-built zip needs the `xattr` step, and Accessibility access has to be re-granted after each update.
-- **Opt-in patterns only.** `PreToolUse` fires before Claude decides whether a call needs permission, and the hook that fires at the right moment (`PermissionRequest`) can only observe. So Nudge can't just mirror whatever Claude would have asked about.
+- **Answering in the terminal.** Esc or No there clears Nudge's copy right away. Yes clears it when the command finishes, because Claude doesn't tell hooks it was answered. For a slow command the prompt sits in the menu bar until then, and clicking it does nothing.
+- **Plan approvals and questions stay in the terminal.** Accepting a plan means choosing how Claude carries on, and a plain Allow can't say which.
+- **"Always allow" is for patterns.** Claude's own prompts get Allow, Deny, and allow for this session.
 - **FIFO queue, 5-minute timeout.** Stack up enough prompts and the oldest ones expire.
 - **One Mac.** Patterns don't sync.
 
