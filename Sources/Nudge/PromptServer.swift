@@ -70,9 +70,6 @@ actor PromptServer {
             let resumed = OnceFlag()
             listener.stateUpdateHandler = { state in
                 if case .ready = state {
-                    if let port = listener.port {
-                        Task { await self.setBoundPort(port.rawValue) }
-                    }
                     if resumed.claim() { cont.resume() }
                 } else if case .failed(let err) = state {
                     if resumed.claim() { cont.resume(throwing: err) }
@@ -80,15 +77,16 @@ actor PromptServer {
             }
             listener.start(queue: .global())
         }
+        // Read here, once ready, rather than from a Task spawned in the state
+        // handler: that raced the resume above, and a caller reading
+        // `boundPort` right after start() sometimes got 0 and wrote it to the
+        // port file, leaving the hooks nothing to connect to.
+        boundPort = listener.port?.rawValue ?? 0
     }
 
     func stop() {
         listener?.cancel()
         listener = nil
-    }
-
-    private func setBoundPort(_ p: UInt16) {
-        boundPort = p
     }
 
     private func handle(connection: NWConnection) async {
