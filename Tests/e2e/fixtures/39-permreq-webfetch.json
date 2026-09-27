@@ -1,0 +1,30 @@
+{
+  "description": "PermissionRequest for a tool no pattern family covers (WebFetch) shows what it reaches for",
+  "patterns": [],
+  "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000039",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000039.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "default",
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "WebFetch",
+    "tool_input": {"url": "https://example.com/changelog", "prompt": "What changed in 2.1?"}
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "WebFetch",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "8d3f0c52-6a1e-4b7f-9e2d-000000000039",
+    "permissionMode": "default",
+    "command": "https://example.com/changelog",
+    "matchedPattern": null,
+    "event": "PermissionRequest",
+    "detail": null,
+    "agent": "claude",
+    "subagentId": null
+  },
+  "respond": "deny",
+  "expectStdout": {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "The user denied this in Nudge."}}},
+  "expectExit": 0
+}

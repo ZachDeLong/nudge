@@ -1,0 +1,52 @@
+{
+  "description": "a PostToolUse for a different call in the same session leaves the prompt up",
+  "patterns": [],
+  "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000030",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000030.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "default",
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "Bash",
+    "tool_input": {"command": "git push origin main", "description": "Push main to origin"},
+    "permission_suggestions": [
+      {
+        "type": "addRules",
+        "rules": [{"toolName": "Bash", "ruleContent": "git push *"}],
+        "behavior": "allow",
+        "destination": "localSettings"
+      }
+    ]
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "8d3f0c52-6a1e-4b7f-9e2d-000000000030",
+    "permissionMode": "default",
+    "command": "git push origin main",
+    "matchedPattern": null,
+    "event": "PermissionRequest",
+    "detail": "Push main to origin",
+    "agent": "claude",
+    "subagentId": null
+  },
+  "respond": "agent-event",
+  "agentEvent": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000030",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000030.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "default",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {"command": "git status", "description": "Show status"},
+    "tool_response": {"stdout": "To github.com:dev/api.git\n   9f21bb4..f0b3e3b  main -> main", "stderr": "", "interrupted": false, "isImage": false},
+    "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0",
+    "duration_ms": 812
+  },
+  "expectWithdrawn": false,
+  "expectStdout": {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "The user denied this in Nudge."}}},
+  "expectExit": 0
+}

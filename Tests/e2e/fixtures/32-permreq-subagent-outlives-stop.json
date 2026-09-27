@@ -1,0 +1,53 @@
+{
+  "description": "a subagent's prompt survives the main thread's Stop (a background subagent can outlive the turn)",
+  "patterns": [],
+  "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000032",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000032.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "default",
+    "agent_id": "af2a6737bafb2a95f",
+    "agent_type": "general-purpose",
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "Bash",
+    "tool_input": {"command": "git push origin main", "description": "Push main to origin"},
+    "permission_suggestions": [
+      {
+        "type": "addRules",
+        "rules": [{"toolName": "Bash", "ruleContent": "git push *"}],
+        "behavior": "allow",
+        "destination": "localSettings"
+      }
+    ]
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "8d3f0c52-6a1e-4b7f-9e2d-000000000032",
+    "permissionMode": "default",
+    "command": "git push origin main",
+    "matchedPattern": null,
+    "event": "PermissionRequest",
+    "detail": "Push main to origin",
+    "agent": "claude",
+    "subagentId": "af2a6737bafb2a95f"
+  },
+  "respond": "agent-event",
+  "agentEvent": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000032",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000032.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "Pushed main to origin.",
+    "background_tasks": [],
+    "session_crons": []
+  },
+  "expectWithdrawn": false,
+  "expectStdout": {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "The user denied this in Nudge."}}},
+  "expectExit": 0
+}

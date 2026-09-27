@@ -1,0 +1,52 @@
+{
+  "description": "a pattern prompt allowed in Nudge, then Claude's own prompt for the same call (an ask rule): answered without a second popover",
+  "patterns": ["Bash(git push:*)"],
+  "steps": [
+    {
+      "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000033",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000033.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {"command": "git push origin main", "description": "Push main to origin"},
+    "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
+  },
+      "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "sessionId": "8d3f0c52-6a1e-4b7f-9e2d-000000000033",
+    "permissionMode": "default",
+    "command": "git push origin main",
+    "matchedPattern": "Bash(git push:*)",
+    "event": "PreToolUse"
+  },
+      "respond": "allow",
+      "expectStdout": {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow", "permissionDecisionReason": "Allowed in Nudge."}}
+    },
+    {
+      "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000033",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000033.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "default",
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "Bash",
+    "tool_input": {"command": "git push origin main", "description": "Push main to origin"},
+    "permission_suggestions": [
+      {
+        "type": "addRules",
+        "rules": [{"toolName": "Bash", "ruleContent": "git push *"}],
+        "behavior": "allow",
+        "destination": "localSettings"
+      }
+    ]
+  },
+      "expectPrompt": null,
+      "expectStdout": {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}
+    }
+  ]
+}

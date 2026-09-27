@@ -1,0 +1,30 @@
+{
+  "description": "PermissionRequest for Edit shows the file path",
+  "patterns": [],
+  "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000038",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000038.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "default",
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "Edit",
+    "tool_input": {"file_path": "/Users/dev/code/api/.github/workflows/ci.yml", "old_string": "runs-on: ubuntu-latest", "new_string": "runs-on: macos-latest"}
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Edit",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "8d3f0c52-6a1e-4b7f-9e2d-000000000038",
+    "permissionMode": "default",
+    "command": "/Users/dev/code/api/.github/workflows/ci.yml",
+    "matchedPattern": null,
+    "event": "PermissionRequest",
+    "detail": null,
+    "agent": "claude",
+    "subagentId": null
+  },
+  "respond": "allow",
+  "expectStdout": {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}},
+  "expectExit": 0
+}

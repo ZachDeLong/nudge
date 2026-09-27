@@ -1,0 +1,16 @@
+{
+  "description": "plan approval (ExitPlanMode) stays in Claude's own dialog: no prompt, no answer",
+  "patterns": ["Bash(*)"],
+  "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000021",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000021.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "plan",
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "ExitPlanMode",
+    "tool_input": {"plan": "1. Add a rate limiter to /login\n2. Cap attempts per IP at 10/min\n3. Add tests"}
+  },
+  "expectStdout": null,
+  "expectExit": 0
+}

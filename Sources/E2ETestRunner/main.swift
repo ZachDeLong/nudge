@@ -1,7 +1,9 @@
-// End-to-end harness, layer 1: recorded Claude Code PreToolUse payloads go
-// into the real `nudge-hook` binary, against a real Nudge app, and each case
-// asserts what actually happened — was a prompt queued (tool, command,
-// matched pattern), and what did the hook hand back to Claude Code.
+// End-to-end harness, layer 1: recorded Claude Code PreToolUse and
+// PermissionRequest payloads go into the real `nudge-hook` binary (and, for
+// what follows a dialog answered in Claude, `nudge-agent-hook`), against a
+// real Nudge app, and each case asserts what actually happened — was a
+// prompt queued (tool, command, matched pattern), and what did the hook hand
+// back to Claude Code.
 //
 // No LLM, no screenshots, no clicks. The harness launches its own Nudge with
 // NUDGE_CONFIG_DIR pointing at a temp dir (own port, token, patterns, prefs)
@@ -97,8 +99,9 @@ final class HookRun {
     /// With `viaShell`, the hook runs as a background child of `sh`, so killing
     /// `process` (the shell) orphans the hook while its stdout reader (us)
     /// stays alive: the "parent died" path, isolated from "reader closed".
-    init(binDir: URL, instance: NudgeInstance, payload: Data, viaShell: Bool = false, configDir: URL? = nil) throws {
-        let hookPath = binDir.appendingPathComponent("nudge-hook").path
+    init(binDir: URL, instance: NudgeInstance, payload: Data, viaShell: Bool = false, configDir: URL? = nil,
+         binary: String = "nudge-hook") throws {
+        let hookPath = binDir.appendingPathComponent(binary).path
         if viaShell {
             // An async list gets /dev/null as stdin, so hand it the real one on fd 3.
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -186,25 +189,77 @@ func cpuSeconds(pid: pid_t) -> Double? {
 
 // MARK: - Fixtures
 
-/// One JSON object per file in Tests/e2e/fixtures; the fields map 1:1 onto
-/// the properties below. Cases run in file-name order.
-struct Fixture {
-    let name: String
-    let description: String
-    let patterns: [String]
-    /// Sent verbatim when the fixture holds a string (a recorded payload,
-    /// byte for byte, or deliberately malformed input); re-serialized otherwise.
+/// Reads a fixture payload: sent verbatim when it's a string (a recorded
+/// payload, byte for byte, or deliberately malformed input); re-serialized
+/// when it's an object.
+func payloadData(_ value: Any?, _ what: String) throws -> Data {
+    switch value {
+    case let s as String:
+        return Data(s.utf8)
+    case let o as [String: Any]:
+        return try JSONSerialization.data(withJSONObject: o)
+    default:
+        throw FixtureError("\(what) must be an object or string")
+    }
+}
+
+/// One hook call: what Claude Code sends, and what should come of it.
+struct Step {
     let payload: Data
     /// Fields the queued prompt must have; nil = nothing may be queued.
     let expectPrompt: [String: Any]?
     /// "allow" | "deny" answer it through the app; "hangup" SIGTERMs the hook
-    /// the way Claude Code does when the user stops waiting; "reader-gone"
-    /// closes the hook's stdout reader and "parent-killed" SIGKILLs its parent
-    /// shell, the two ways a SIGKILLed Claude leaves the hook behind.
+    /// the way Claude Code does when the user stops waiting (Esc or No in
+    /// the terminal); "reader-gone" closes the hook's stdout reader and
+    /// "parent-killed" SIGKILLs its parent shell, the two ways a SIGKILLed
+    /// Claude leaves the hook behind; "agent-event" runs nudge-agent-hook
+    /// with `agentEvent` while the prompt is up, as Claude does after you
+    /// answer its own dialog.
     let respond: String?
     /// Exact hook stdout as JSON; nil = stdout must be empty.
     let expectStdout: Any?
     let expectExit: Int32
+    /// With respond "agent-event": the payload nudge-agent-hook gets.
+    let agentEvent: Data?
+    /// With respond "agent-event": whether that event must withdraw the
+    /// prompt (default true). When it mustn't, the harness then denies the
+    /// prompt and checks the hook's answer.
+    let expectWithdrawn: Bool
+
+    init(_ obj: [String: Any], context: String) throws {
+        payload = try payloadData(obj["payload"], "\(context): payload")
+        expectPrompt = obj["expectPrompt"] as? [String: Any]
+        respond = obj["respond"] as? String
+        let stdout = obj["expectStdout"]
+        expectStdout = stdout is NSNull ? nil : stdout
+        expectExit = (obj["expectExit"] as? NSNumber)?.int32Value ?? 0
+        agentEvent = obj["agentEvent"] == nil ? nil : try payloadData(obj["agentEvent"], "\(context): agentEvent")
+        expectWithdrawn = obj["expectWithdrawn"] as? Bool ?? true
+
+        let responses = ["allow", "deny", "hangup", "reader-gone", "parent-killed", "agent-event"]
+        if expectPrompt != nil {
+            guard let respond, responses.contains(respond) else {
+                throw FixtureError("\(context): expectPrompt needs respond = \(responses.joined(separator: " | "))")
+            }
+            if respond == "agent-event", agentEvent == nil {
+                throw FixtureError("\(context): respond agent-event needs agentEvent")
+            }
+        }
+    }
+}
+
+/// One JSON object per file in Tests/e2e/fixtures; the fields map 1:1 onto
+/// the properties below. Cases run in file-name order.
+///
+/// A fixture is one hook call (its Step fields at the top level), or a
+/// `steps` array of them, run in order against the same Nudge, for
+/// behavior that spans calls (a pattern allow, then Claude's own prompt for
+/// the same call).
+struct Fixture {
+    let name: String
+    let description: String
+    let patterns: [String]
+    let steps: [Step]
     /// Set when the case asserts what *should* happen but currently doesn't.
     let knownFailure: String?
     /// Points the hook somewhere other than the running instance: "missing"
@@ -222,29 +277,19 @@ struct Fixture {
         description = obj["description"] as? String ?? ""
         guard let patterns = obj["patterns"] as? [String] else { throw FixtureError("\(name): missing patterns") }
         self.patterns = patterns
-        switch obj["payload"] {
-        case let s as String:
-            payload = Data(s.utf8)
-        case let o as [String: Any]:
-            payload = try JSONSerialization.data(withJSONObject: o)
-        default:
-            throw FixtureError("\(name): payload must be an object or string")
+        if let steps = obj["steps"] {
+            guard let list = steps as? [[String: Any]], !list.isEmpty else {
+                throw FixtureError("\(name): steps must be a non-empty list of objects")
+            }
+            let fixtureName = name
+            self.steps = try list.enumerated().map { try Step($1, context: "\(fixtureName) step \($0 + 1)") }
+        } else {
+            steps = [try Step(obj, context: name)]
         }
-        expectPrompt = obj["expectPrompt"] as? [String: Any]
-        respond = obj["respond"] as? String
-        let stdout = obj["expectStdout"]
-        expectStdout = stdout is NSNull ? nil : stdout
-        expectExit = (obj["expectExit"] as? NSNumber)?.int32Value ?? 0
         knownFailure = obj["knownFailure"] as? String
         hookConfigDir = obj["hookConfigDir"] as? String
         if let h = hookConfigDir, !["missing", "stale"].contains(h) {
             throw FixtureError("\(name): hookConfigDir must be missing | stale")
-        }
-
-        if expectPrompt != nil {
-            guard let respond, ["allow", "deny", "hangup", "reader-gone", "parent-killed"].contains(respond) else {
-                throw FixtureError("\(name): expectPrompt needs respond = allow | deny | hangup | reader-gone | parent-killed")
-            }
         }
     }
 }
@@ -253,7 +298,6 @@ struct Fixture {
 
 /// Runs one fixture, returning the list of expectation failures (empty = pass).
 func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
-    var problems: [String] = []
     instance.drain()
     do {
         try instance.setPatterns(fx.patterns)
@@ -276,10 +320,22 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
     }
     defer { if fx.hookConfigDir == "stale", let d = hookConfigDir { try? FileManager.default.removeItem(at: d) } }
 
+    for (i, step) in fx.steps.enumerated() {
+        let problems = run(step, instance: instance, binDir: binDir, hookConfigDir: hookConfigDir)
+        if !problems.isEmpty {
+            // Later steps build on this one, so stop here.
+            return fx.steps.count == 1 ? problems : problems.map { "step \(i + 1): \($0)" }
+        }
+    }
+    return []
+}
+
+func run(_ step: Step, instance: NudgeInstance, binDir: URL, hookConfigDir: URL?) -> [String] {
+    var problems: [String] = []
     let hook: HookRun
     do {
-        hook = try HookRun(binDir: binDir, instance: instance, payload: fx.payload,
-                           viaShell: fx.respond == "parent-killed", configDir: hookConfigDir)
+        hook = try HookRun(binDir: binDir, instance: instance, payload: step.payload,
+                           viaShell: step.respond == "parent-killed", configDir: hookConfigDir)
     } catch {
         return ["couldn't start nudge-hook: \(error)"]
     }
@@ -297,7 +353,7 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
         queued = (try? instance.queue()) ?? []
     }
 
-    guard let expected = fx.expectPrompt else {
+    guard let expected = step.expectPrompt else {
         if let got = queued.first {
             problems.append("expected no prompt, but one was queued: \(describe(got))")
             // Unblock the hook now rather than letting it hang out the wait.
@@ -306,7 +362,7 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
         if !hook.finish(within: 5) {
             problems.append("hook still running after 5s with nothing to answer")
         }
-        checkOutput(fx, hook, hookConfigDir: hookConfigDir, into: &problems)
+        checkOutput(step, hook, hookConfigDir: hookConfigDir, into: &problems)
         return problems
     }
 
@@ -321,14 +377,15 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
     for key in expected.keys.sorted() where !jsonEqual(prompt[key], expected[key]) {
         problems.append("prompt.\(key): expected \(describe(expected[key])), got \(describe(prompt[key]))")
     }
+    let stillQueued = { ((try? instance.queue()) ?? []).contains { $0["id"] as? String == id } }
 
-    switch fx.respond {
+    switch step.respond {
     case "hangup":
-        // Claude Code gives up on a hook by killing it: Esc in the terminal,
-        // answering there instead, or the session ending.
+        // Claude Code gives up on a hook by killing it: Esc or No in the
+        // terminal, or the session ending.
         hook.process.terminate()
         if !hook.finish(within: 5) { problems.append("hook ignored SIGTERM") }
-        let withdrawn = waitUntil(3) { ((try? instance.queue()) ?? []).allSatisfy { $0["id"] as? String != id } }
+        let withdrawn = waitUntil(3) { !stillQueued() }
         if !withdrawn {
             problems.append("prompt \(id) still queued 3s after its hook died (should be withdrawn)")
         }
@@ -344,13 +401,13 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
         // group), so it has to notice on its own and exit.
         // The watcher sleeps in kevent; a busy loop there would burn a core
         // for as long as the user takes to answer.
-        let hookPID = fx.respond == "parent-killed" ? hook.shellChildPID : hook.process.processIdentifier
+        let hookPID = step.respond == "parent-killed" ? hook.shellChildPID : hook.process.processIdentifier
         Thread.sleep(forTimeInterval: 1)
         if let pid = hookPID, let cpu = cpuSeconds(pid: pid), cpu > 0.2 {
             problems.append("hook used \(cpu)s of CPU in 1s of waiting (busy loop?)")
         }
         let hookAlive: () -> Bool
-        if fx.respond == "reader-gone" {
+        if step.respond == "reader-gone" {
             hook.closeReader()
             hookAlive = { hook.isRunning }
         } else {
@@ -366,16 +423,63 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
         }
         // exit(0) runs every atexit handler on the watcher thread: a crash
         // there would also end the process, so require a clean exit.
-        if fx.respond == "reader-gone", !hook.isRunning,
+        if step.respond == "reader-gone", !hook.isRunning,
            hook.process.terminationReason != .exit || hook.process.terminationStatus != 0 {
             problems.append("hook ended with \(hook.termination), expected exit 0")
         }
-        let withdrawn = waitUntil(3) { ((try? instance.queue()) ?? []).allSatisfy { $0["id"] as? String != id } }
+        let withdrawn = waitUntil(3) { !stillQueued() }
         if !withdrawn {
             problems.append("prompt \(id) still queued after its caller went away (should be withdrawn)")
         }
+    case "agent-event":
+        // You answered Claude's own dialog. Yes leaves the hook running (no
+        // signal, stdout still open), so what Nudge hears is the agent hook
+        // reporting what happened next: the call ran, or the turn stopped.
+        do {
+            let agentHook = try HookRun(binDir: binDir, instance: instance, payload: step.agentEvent!,
+                                        binary: "nudge-agent-hook")
+            if !agentHook.finish(within: 5) {
+                problems.append("nudge-agent-hook still running after 5s")
+                agentHook.kill()
+            } else if agentHook.process.terminationReason != .exit || agentHook.process.terminationStatus != 0 {
+                problems.append("nudge-agent-hook ended with \(agentHook.termination)")
+            }
+        } catch {
+            problems.append("couldn't start nudge-agent-hook: \(error)")
+            return problems
+        }
+        if step.expectWithdrawn {
+            let withdrawn = waitUntil(3) { !stillQueued() }
+            if !withdrawn {
+                problems.append("prompt \(id) still queued 3s after the agent event (should be withdrawn)")
+                _ = try? instance.resolve(id: id, decision: "deny")
+            }
+            if !hook.finish(within: 5) {
+                problems.append("hook still running 5s after its prompt was withdrawn")
+                return problems
+            }
+            checkOutput(step, hook, hookConfigDir: hookConfigDir, into: &problems)
+            if withdrawn, let status = try? instance.resolve(id: id, decision: "allow"), status != 409 {
+                problems.append("resolving the withdrawn prompt returned HTTP \(status), expected 409")
+            }
+        } else {
+            // Give a wrong withdrawal time to happen before checking.
+            Thread.sleep(forTimeInterval: 1)
+            guard stillQueued() else {
+                problems.append("prompt \(id) was withdrawn by an agent event that doesn't answer it")
+                _ = hook.finish(within: 5)
+                return problems
+            }
+            let status = try? instance.resolve(id: id, decision: "deny")
+            if status != 200 { problems.append("resolve(deny) after the agent event returned HTTP \(status.map(String.init) ?? "nothing")") }
+            if !hook.finish(within: 5) {
+                problems.append("hook still waiting 5s after the deny was sent")
+                return problems
+            }
+            checkOutput(step, hook, hookConfigDir: hookConfigDir, into: &problems)
+        }
     default:
-        let decision = fx.respond!
+        let decision = step.respond!
         do {
             let status = try instance.resolve(id: id, decision: decision)
             if status != 200 { problems.append("resolve(\(decision)) returned HTTP \(status)") }
@@ -386,13 +490,14 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
             problems.append("hook still waiting 5s after the \(decision) was sent")
             return problems
         }
-        checkOutput(fx, hook, hookConfigDir: hookConfigDir, into: &problems)
+        checkOutput(step, hook, hookConfigDir: hookConfigDir, into: &problems)
         if let left = try? instance.queue(), !left.isEmpty {
             problems.append("queue not empty after answering: \(left.count) left")
         }
     }
     return problems
 }
+
 
 /// `value` with `placeholder` replaced by `replacement` in every string inside it.
 func substitute(_ placeholder: String, with replacement: String, in value: Any) -> Any {
@@ -404,7 +509,7 @@ func substitute(_ placeholder: String, with replacement: String, in value: Any) 
     }
 }
 
-func checkOutput(_ fx: Fixture, _ hook: HookRun, hookConfigDir: URL? = nil, into problems: inout [String]) {
+func checkOutput(_ fx: Step, _ hook: HookRun, hookConfigDir: URL? = nil, into problems: inout [String]) {
     guard !hook.isRunning else { return }
     if hook.process.terminationReason != .exit || hook.process.terminationStatus != fx.expectExit {
         problems.append("hook: expected exit \(fx.expectExit), got \(hook.termination)")
@@ -431,7 +536,7 @@ func checkOutput(_ fx: Fixture, _ hook: HookRun, hookConfigDir: URL? = nil, into
 setvbuf(Darwin.stdout, nil, _IOLBF, 0)
 let opts = parseOptions()
 sweepStaleTempDirs()
-for bin in ["Nudge", "nudge-hook"] where !FileManager.default.isExecutableFile(atPath: opts.binDir.appendingPathComponent(bin).path) {
+for bin in ["Nudge", "nudge-hook", "nudge-agent-hook"] where !FileManager.default.isExecutableFile(atPath: opts.binDir.appendingPathComponent(bin).path) {
     die("\(bin) not found in \(opts.binDir.path) — build first (make e2e does)")
 }
 guard ProcessInfo.processInfo.environment["NUDGE_CONFIG_DIR"] == nil else {

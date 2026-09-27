@@ -1,0 +1,27 @@
+{
+  "description": "patterns keep asking in auto mode",
+  "patterns": ["Bash(git push:*)"],
+  "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000037",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000037.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "auto",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {"command": "git push origin main", "description": "Push main to origin"},
+    "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "sessionId": "8d3f0c52-6a1e-4b7f-9e2d-000000000037",
+    "permissionMode": "auto",
+    "command": "git push origin main",
+    "matchedPattern": "Bash(git push:*)",
+    "event": "PreToolUse"
+  },
+  "respond": "deny",
+  "expectStdout": {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "The user denied this in Nudge."}},
+  "expectExit": 0
+}
