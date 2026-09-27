@@ -1,6 +1,6 @@
 # Nudge
 
-Claude Code permission prompts, in your menu bar.
+Claude Code and Codex permission prompts, in your menu bar.
 
 When Claude stops to ask before running something (a `git push --force`, an edit to a config file), Nudge pops a panel out of the menu bar so you can click Allow from whatever app you're in. You don't have to go find the terminal.
 
@@ -23,7 +23,7 @@ It's a quality-of-life tool, not a security tool. The terminal still works: answ
 curl -fsSL https://raw.githubusercontent.com/ZachDeLong/nudge/main/install.sh | bash
 ```
 
-Or clone and `make install`. Either way it builds the app into `/Applications/Nudge.app`, seeds default patterns, adds the hooks to `~/.claude/settings.json`, links `nudge-claude` and `nudge-update` onto your PATH, and launches Nudge.
+Or clone and `make install`. Either way it builds the app into `/Applications/Nudge.app`, seeds default patterns, adds the hooks to `~/.claude/settings.json` (and to `~/.codex/hooks.json` if you use [Codex](#codex)), links `nudge-claude` and `nudge-update` onto your PATH, and launches Nudge.
 
 You'll need macOS 14+, Xcode Command Line Tools, and `jq` (`brew install jq`). Agent sessions also need `tmux`.
 
@@ -42,10 +42,27 @@ Then wire up the hooks from a clone of the repo:
 git clone https://github.com/ZachDeLong/nudge.git && cd nudge
 ./scripts/seed-patterns.sh
 ./scripts/install-hook.sh
+./scripts/install-codex-hook.sh   # if you use Codex
 open -ga Nudge
 ```
 
 </details>
+
+## Codex
+
+Nudge answers Codex's approval requests too, from the CLI or the ChatGPT app. If you have `~/.codex`, `make install` adds two entries to its `hooks.json`, after backing the file up:
+
+- `PermissionRequest` runs `nudge-hook --agent codex` when Codex is about to ask. The popover says Codex and shows the command, or the patch and the files it touches.
+- `Interrupt` runs `nudge-agent-hook --agent codex`. Stop a turn in Codex and Nudge's copy of its prompt goes away.
+
+Codex skips new hooks until you trust them. Do it once: run `codex` in a terminal (the ChatGPT app ships it at `/Applications/ChatGPT.app/Contents/Resources/codex`), type `/hooks`, and trust Nudge's two entries.
+
+A few things work differently from Claude Code:
+
+- Codex doesn't show its own prompt while Nudge is asking. If you don't answer in 2 minutes, Nudge hands the request back and Codex asks as usual. Pausing Nudge does that right away.
+- If you use auto-review, Nudge asks you before the reviewer sees anything. Codex doesn't tell hooks which reviewer it would use.
+- With "Skip when terminal is focused" on, Nudge also stays quiet while the ChatGPT app is in front.
+- Patterns and "Always allow" are Claude-only.
 
 ## Patterns
 
@@ -150,7 +167,7 @@ If you allow a pattern prompt and an ask rule covers the same command, Claude as
 make uninstall
 ```
 
-This removes the app and its hooks (backing up `settings.json` first). Your patterns and prefs stay in `~/.config/nudge/`.
+This removes the app and its hooks (backing up `settings.json` and Codex's `hooks.json` first). Your patterns and prefs stay in `~/.config/nudge/`.
 
 ## License
 
