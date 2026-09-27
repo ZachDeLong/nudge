@@ -1,19 +1,25 @@
 // End-to-end harness, layer 2: real Claude Code. Each scenario runs
 // `claude -p` in a throwaway git sandbox whose `origin` is a local bare repo,
-// with a settings file whose only PreToolUse hook is the freshly built
-// `nudge-hook` pointed at the harness's own isolated Nudge. The harness
-// answers the prompt (test API, a real click on the popover, or by killing
-// Claude) and asserts on real effects: did the bare remote get the commit,
-// what did Claude's transcript say happened to the tool call.
+// with a settings file whose only PreToolUse and PermissionRequest hooks are
+// the freshly built `nudge-hook` pointed at the harness's own isolated
+// Nudge. The harness answers the prompt (test API, a real click on the
+// popover, or by killing Claude) and asserts on real effects: did the bare
+// remote get the commit, what did Claude's transcript say happened to the
+// tool call.
+//
+// `-p --permission-prompts none` fires PermissionRequest and honors the
+// hook's allow or deny (checked on Claude Code 2.1.283); with no answer the
+// call is denied. So a scenario whose permissions leave Bash out gets
+// Claude's own prompts through Nudge, the same as a terminal session.
 //
 // Isolation from the user's real setup:
 // - `--setting-sources project` keeps ~/.claude/settings.json (and the real
 //   Nudge hooks in it) out; the sandbox has no project settings, so the only
 //   hooks are the ones in our `--settings` file.
 // - Every run asserts that from Claude's own `--include-hook-events` stream:
-//   only our PreToolUse and our Stop hook may fire, each at most once per
-//   call. The Stop hook is a positive control: it proves hook events are
-//   being reported, so their absence means something.
+//   only our PreToolUse, PermissionRequest and Stop hooks may fire, each at
+//   most once per call. The Stop hook is a positive control: it proves hook
+//   events are being reported, so their absence means something.
 // - While Claude runs, the harness watches the process tree under it for
 //   anything from /Applications/Nudge.app, and the real Nudge's windows for
 //   a popover.
@@ -53,6 +59,23 @@ struct ClaudeFixture {
     /// "pushed" (the remote has Claude's commit) | "unchanged".
     let expectRemote: String
     let timeout: TimeInterval
+    /// Claude Code `permissions` for the run's settings ({"allow": [...],
+    /// "ask": [...]}). Defaults to allowing every tool the run has, so only
+    /// patterns route anything to Nudge; leave Bash out to have Claude's own
+    /// prompts (PermissionRequest) come through instead.
+    let permissions: [String: Any]
+    /// Exactly how many prompts Nudge may queue over the whole run.
+    let expectPrompts: Int?
+    /// Exact counts of hook runs from Claude's hook events, e.g.
+    /// {"PermissionRequest:Bash": 1}. Names not listed aren't counted here
+    /// (the isolation audit still applies).
+    let expectHookCounts: [String: Int]
+    /// Per hook name, a substring one of its responses must contain, e.g.
+    /// {"PermissionRequest:Bash": "\"behavior\":\"allow\""}.
+    let expectHookOutputs: [String: String]
+    /// Substrings of Bash commands Claude must have run; if one is missing it
+    /// didn't follow the instruction, so the run is INCONCLUSIVE.
+    let expectRan: [String]
 
     init(url: URL) throws {
         name = url.deletingPathExtension().lastPathComponent
@@ -77,6 +100,11 @@ struct ClaudeFixture {
         }
         expectRemote = remote
         timeout = (obj["timeoutSeconds"] as? NSNumber)?.doubleValue ?? 150
+        permissions = obj["permissions"] as? [String: Any] ?? ["allow": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]]
+        expectPrompts = (obj["expectPrompts"] as? NSNumber)?.intValue
+        expectHookCounts = (obj["expectHookCounts"] as? [String: NSNumber])?.mapValues(\.intValue) ?? [:]
+        expectHookOutputs = obj["expectHookOutputs"] as? [String: String] ?? [:]
+        expectRan = obj["expectRan"] as? [String] ?? []
     }
 }
 
@@ -149,10 +177,12 @@ final class Sandbox {
     }
 }
 
-/// The `--settings` file: our hook, a no-op Stop hook as the positive
-/// control for the hook-event audit, and allow rules for the tools Claude
-/// may use so nothing unmatched stalls headless mode.
-func claudeSettings(hook: URL, configDir: URL) throws -> Data {
+/// The `--settings` file: our hook on both events install-hook.sh wires
+/// (PreToolUse for patterns, PermissionRequest for Claude's own prompts), a
+/// no-op Stop hook as the positive control for the hook-event audit, and the
+/// scenario's permission rules. Anything that would still prompt with no
+/// answer is denied (`--permission-prompts none`), so nothing stalls.
+func claudeSettings(hook: URL, configDir: URL, permissions: [String: Any]) throws -> Data {
     // NUDGE_CONFIG_DIR goes on the hook's command line, not into Claude's
     // environment: if some other Nudge hook fired, it must not find the
     // harness instance and hide the leak.
@@ -164,9 +194,13 @@ func claudeSettings(hook: URL, configDir: URL) throws -> Data {
                 "matcher": "Bash|Edit|Write|Read|MultiEdit|NotebookEdit|mcp__.*",
                 "hooks": [["type": "command", "command": command, "timeout": 300]],
             ]],
+            "PermissionRequest": [[
+                "matcher": "*",
+                "hooks": [["type": "command", "command": command, "timeout": 300]],
+            ]],
             "Stop": [["hooks": [["type": "command", "command": "true"]]]],
         ],
-        "permissions": ["allow": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]],
+        "permissions": permissions,
         // The user's global CLAUDE.md is instructions for real work; keep it
         // out of a test session.
         "claudeMdExcludes": ["\(home)/.claude/CLAUDE.md", "\(home)/.agent-config/**"],
@@ -461,7 +495,8 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
     let sandbox: Sandbox
     do {
         sandbox = try Sandbox(files: fx.files, commitFiles: fx.commitFiles)
-        try claudeSettings(hook: ctx.opts.binDir.appendingPathComponent("nudge-hook"), configDir: instance.configDir)
+        try claudeSettings(hook: ctx.opts.binDir.appendingPathComponent("nudge-hook"), configDir: instance.configDir,
+                           permissions: fx.permissions)
             .write(to: sandbox.settings)
         instance.drain()
         try instance.setPatterns(fx.patterns)
@@ -603,6 +638,35 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
     a.problems += violations
     a.problems += auditHooks(t, finishedNormally: !timedOut && killedAt == nil)
 
+    // Counts: how many prompts Nudge showed, how often each hook ran. A
+    // Bash command the scenario didn't ask for can throw those off, so with
+    // one around a wrong count is INCONCLUSIVE rather than a Nudge failure.
+    let asked = fx.expectRan + fx.expectCommandContains
+    let strays = t.toolUses.filter { use in use.name == "Bash" && !asked.contains { use.command.contains($0) } }
+    var countProblems: [String] = []
+    if let n = fx.expectPrompts, prompts.count != n {
+        countProblems.append("Nudge queued \(prompts.count) prompt(s), expected \(n): \(prompts.map { "\($0["event"] as? String ?? "?") \(describe($0["command"]))" })")
+    }
+    var hookCounts: [String: Int] = [:]
+    for name in t.hookStarts { hookCounts[name, default: 0] += 1 }
+    for (name, n) in fx.expectHookCounts.sorted(by: { $0.key < $1.key }) where hookCounts[name, default: 0] != n {
+        countProblems.append("hook \(name) ran \(hookCounts[name, default: 0])x, expected \(n)")
+    }
+    if !countProblems.isEmpty, !strays.isEmpty, !asked.isEmpty {
+        a.inconclusive += countProblems.map { "\($0) (Claude also ran \(describe(strays.map(\.command))), which it wasn't asked to)" }
+    } else {
+        a.problems += countProblems
+    }
+    for (name, needle) in fx.expectHookOutputs.sorted(by: { $0.key < $1.key }) {
+        let outs = t.hookResponses.filter { $0.name == name }.map(\.stdout)
+        if !outs.contains(where: { $0.contains(needle) }) {
+            a.problems.append("no \(name) hook response contains \(describe(needle)); got \(describe(outs))")
+        }
+    }
+    for needle in fx.expectRan where !t.toolUses.contains(where: { $0.name == "Bash" && $0.command.contains(needle) }) {
+        a.inconclusive.append("Claude never ran a Bash command containing \(describe(needle))")
+    }
+
     // 2. The core invariant: every git push Claude ran was routed to Nudge,
     //    with exactly the command Claude sent.
     for push in t.pushes where !prompts.contains(where: { $0["command"] as? String == push.command }) {
@@ -616,7 +680,7 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
         return finish(a)
     }
     if prompts.count > 1 {
-        a.info.append("\(prompts.count) prompts queued (Claude retried): \(prompts.map { describe($0["command"]) })")
+        a.info.append("\(prompts.count) prompts queued: \(prompts.map { "\($0["event"] as? String ?? "?") \(describe($0["command"]))" })")
     }
     var expected = fx.expectPrompt
     expected["sessionId"] = run.sessionID
@@ -635,11 +699,17 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
     let workAfter = sandbox.head(of: sandbox.work)
     let pushUse = t.pushes.first { $0.command == command }
     let pushResult = pushUse.flatMap { t.results[$0.id] }
-    let ourHookOutputs = t.hookResponses.filter { $0.name.hasPrefix("PreToolUse:") }.map(\.stdout)
+    // A pattern prompt answers through PreToolUse, Claude's own prompt
+    // through PermissionRequest, each in its own shape.
+    let routedBy = prompt["event"] as? String ?? "PreToolUse"
+    let ourHookOutputs = t.hookResponses.filter { $0.name.hasPrefix("\(routedBy):") }.map(\.stdout)
+    func answer(_ decision: String) -> String {
+        routedBy == "PermissionRequest" ? #""behavior":"\#(decision)""# : #""permissionDecision":"\#(decision)""#
+    }
     switch fx.respond {
     case "allow", "click":
-        if !ourHookOutputs.contains(where: { $0.contains(#""permissionDecision":"allow""#) }) {
-            a.problems.append("no PreToolUse hook response carried permissionDecision allow; got \(describe(ourHookOutputs))")
+        if !ourHookOutputs.contains(where: { $0.contains(answer("allow")) }) {
+            a.problems.append("no \(routedBy) hook response carried \(answer("allow")); got \(describe(ourHookOutputs))")
         }
         if workAfter == workBefore, !fx.commitFiles {
             a.inconclusive.append("Claude didn't make a commit, so there was nothing to push")
@@ -655,8 +725,8 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
         if remoteAfter != remoteBefore {
             a.problems.append("remote main moved \(remoteBefore ?? "?") → \(remoteAfter ?? "?") despite Deny")
         }
-        if !ourHookOutputs.contains(where: { $0.contains(#""permissionDecision":"deny""#) }) {
-            a.problems.append("no PreToolUse hook response carried permissionDecision deny; got \(describe(ourHookOutputs))")
+        if !ourHookOutputs.contains(where: { $0.contains(answer("deny")) }) {
+            a.problems.append("no \(routedBy) hook response carried \(answer("deny")); got \(describe(ourHookOutputs))")
         }
         let denials = t.result?["permission_denials"] as? [[String: Any]] ?? []
         if let id = pushUse?.id, !denials.contains(where: { $0["tool_use_id"] as? String == id }) {
@@ -693,7 +763,8 @@ func finish(_ a: Attempt) -> Attempt {
 
 /// Claude's own hook-event stream vs. what our settings define. Anything
 /// else firing (SessionStart, UserPromptSubmit, PostToolUse, a second
-/// PreToolUse) means hooks leaked in from the user's settings or a plugin.
+/// PreToolUse or PermissionRequest hook) means hooks leaked in from the
+/// user's settings or a plugin.
 func auditHooks(_ t: Transcript, finishedNormally: Bool) -> [String] {
     var problems: [String] = []
     var counts: [String: Int] = [:]
@@ -701,11 +772,12 @@ func auditHooks(_ t: Transcript, finishedNormally: Bool) -> [String] {
     for (name, count) in counts.sorted(by: { $0.key < $1.key }) {
         if name == "Stop" {
             if count > 1 { problems.append("Stop hooks fired \(count)x; ours is the only one allowed") }
-        } else if name.hasPrefix("PreToolUse:") {
-            let tool = String(name.dropFirst("PreToolUse:".count))
+        } else if let event = ["PreToolUse", "PermissionRequest"].first(where: { name.hasPrefix("\($0):") }) {
+            // Ours runs at most once per call; more means another is loaded.
+            let tool = String(name.dropFirst(event.count + 1))
             let calls = t.toolUses.filter { $0.name == tool }.count
             if count > calls {
-                problems.append("\(name) fired \(count)x for \(calls) call(s): a second PreToolUse hook is loaded")
+                problems.append("\(name) fired \(count)x for \(calls) call(s): a second \(event) hook is loaded")
             }
         } else {
             problems.append("hook \(name) fired \(count)x, but the run's settings don't define it (user settings or a plugin leaked in)")

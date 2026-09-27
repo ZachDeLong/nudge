@@ -1,0 +1,26 @@
+{
+  "description": "an allow-listed git status never reaches Nudge; only the push, which Claude would ask about, does",
+  "patterns": [],
+  "files": {
+    "hello.txt": "hello from the nudge e2e harness\n"
+  },
+  "commitFiles": true,
+  "permissions": {
+    "allow": ["Read", "Glob", "Grep", "Bash(git status)", "Bash(git status:*)"]
+  },
+  "prompt": "Use the Bash tool to run these two commands, verbatim, as two separate Bash calls, in this order:\n\n1. git status\n2. git push origin main\n\nDo not run anything else and do not look around the repository first. If a command fails or is denied, do not retry it and do not try an alternative; stop and reply with one short line saying what happened.",
+  "respond": "allow",
+  "expectPrompt": {
+    "tool": "Bash",
+    "kind": null,
+    "permissionMode": "default",
+    "matchedPattern": null,
+    "event": "PermissionRequest"
+  },
+  "expectCommandContains": ["git push"],
+  "expectRan": ["git status", "git push"],
+  "expectPrompts": 1,
+  "expectHookCounts": {"PreToolUse:Bash": 2, "PermissionRequest:Bash": 1},
+  "expectRemote": "pushed",
+  "timeoutSeconds": 150
+}

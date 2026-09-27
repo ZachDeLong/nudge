@@ -1,0 +1,26 @@
+{
+  "description": "no patterns and Bash not allowed: Claude's own prompt for the push comes to Nudge (PermissionRequest), and Allow lands it",
+  "patterns": [],
+  "files": {
+    "hello.txt": "hello from the nudge e2e harness\n"
+  },
+  "commitFiles": true,
+  "permissions": {
+    "allow": ["Read", "Glob", "Grep"]
+  },
+  "prompt": "Use the Bash tool to run exactly this one command, verbatim: git push origin main\n\nDo not run anything else and do not look around the repository first. If a command fails or is denied, do not retry it and do not try an alternative; stop and reply with one short line saying what happened.",
+  "respond": "allow",
+  "expectPrompt": {
+    "tool": "Bash",
+    "kind": null,
+    "permissionMode": "default",
+    "matchedPattern": null,
+    "event": "PermissionRequest"
+  },
+  "expectCommandContains": ["git push"],
+  "expectRan": ["git push"],
+  "expectPrompts": 1,
+  "expectHookCounts": {"PermissionRequest:Bash": 1},
+  "expectRemote": "pushed",
+  "timeoutSeconds": 150
+}
