@@ -62,6 +62,7 @@ test:
 	fi
 	swift build --product nudge-test-matching -c $(CONFIG)
 	$(BUILD_DIR)/nudge-test-matching
+	./Tests/install/codex-hook-test.sh
 
 # End-to-end: recorded Claude Code hook payloads through the real nudge-hook
 # into a real Nudge, answered over its test API. Runs its own isolated Nudge
