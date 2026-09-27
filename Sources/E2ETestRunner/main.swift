@@ -18,7 +18,8 @@
 // hook should do with it.
 //
 // `--claude` switches to layer 2 (ClaudeSuite.swift, `make e2e-claude`): real
-// `claude -p` sessions instead of recorded payloads.
+// `claude -p` sessions instead of recorded payloads. `--codex` does the same
+// with real Codex (CodexSuite.swift, `make e2e-codex`).
 
 import Darwin
 import Foundation
@@ -31,10 +32,13 @@ struct Options {
     var fixturesDirGiven = false
     var keepTempDir = false
     var filters: [String] = []
-    // Layer 2 (`--claude`) only.
+    // Layer 2 (`--claude`, `--codex`) only.
     var claude = false
+    var codex = false
     var model = "haiku"
+    var modelGiven = false
     var claudeBin: String?
+    var codexBin: String?
     var peekabooBin: String?
     var artifactsDir: URL?
 }
@@ -58,12 +62,18 @@ func parseOptions() -> Options {
             opts.keepTempDir = true
         case "--claude":
             opts.claude = true
+        case "--codex":
+            opts.codex = true
         case "--model":
             guard let v = args.next() else { die("--model needs a value") }
             opts.model = v
+            opts.modelGiven = true
         case "--claude-bin":
             guard let v = args.next() else { die("--claude-bin needs a value") }
             opts.claudeBin = v
+        case "--codex-bin":
+            guard let v = args.next() else { die("--codex-bin needs a value") }
+            opts.codexBin = v
         case "--peekaboo":
             guard let v = args.next() else { die("--peekaboo needs a value") }
             opts.peekabooBin = v
@@ -76,6 +86,9 @@ func parseOptions() -> Options {
                    nudge-test-e2e --claude [--bin-dir DIR] [--fixtures DIR] [--keep]
                                   [--model NAME] [--claude-bin PATH] [--peekaboo PATH]
                                   [--artifacts DIR] [name-filter...]
+                   nudge-test-e2e --codex [--bin-dir DIR] [--fixtures DIR] [--keep]
+                                  [--model NAME] [--codex-bin PATH] [--artifacts DIR]
+                                  [name-filter...]
             """)
             exit(0)
         default:
@@ -575,6 +588,9 @@ guard ProcessInfo.processInfo.environment["NUDGE_CONFIG_DIR"] == nil else {
 }
 if opts.claude {
     runClaudeSuite(opts)
+}
+if opts.codex {
+    runCodexSuite(opts)
 }
 
 let fixtureURLs = ((try? FileManager.default.contentsOfDirectory(at: opts.fixturesDir, includingPropertiesForKeys: nil)) ?? [])

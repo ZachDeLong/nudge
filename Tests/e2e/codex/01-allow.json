@@ -1,0 +1,20 @@
+{
+  "description": "Codex asks before a command (untrusted policy): the request comes to Nudge labeled Codex, Allow runs it, and Codex never asks its own client",
+  "policy": "untrusted",
+  "sandbox": "workspace-write",
+  "prompt": "Run exactly this one shell command and nothing else: `touch made-by-codex.txt`\n\nDo not look around first. If it is denied or fails, do not retry and do not try anything else; reply with one short line saying what happened, quoting any message you got.",
+  "respond": "allow",
+  "expectPrompt": {
+    "tool": "Bash",
+    "kind": null,
+    "event": "PermissionRequest",
+    "permissionMode": "default",
+    "matchedPattern": null
+  },
+  "expectCommandContains": [
+    "touch made-by-codex.txt"
+  ],
+  "expectFile": "made-by-codex.txt",
+  "expectFileExists": true,
+  "timeoutSeconds": 120
+}

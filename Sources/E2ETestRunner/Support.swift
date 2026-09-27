@@ -55,7 +55,7 @@ func sweepStaleTempDirs() {
     let tmp = URL(fileURLWithPath: "/tmp").resolvingSymlinksInPath()
     guard let names = try? fm.contentsOfDirectory(atPath: tmp.path) else { return }
     let cutoff = Date().addingTimeInterval(-30 * 60)
-    for name in names where name.hasPrefix("nudge-e2e.") || name.hasPrefix("nudge-e2e-claude.") {
+    for name in names where name.hasPrefix("nudge-e2e.") || name.hasPrefix("nudge-e2e-claude.") || name.hasPrefix("nudge-e2e-codex.") {
         let dir = tmp.appendingPathComponent(name)
         guard let attrs = try? fm.attributesOfItem(atPath: dir.path),
               (attrs[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),

@@ -1,4 +1,4 @@
-.PHONY: build clean run app install uninstall sync-patterns import-permissions test e2e e2e-claude test-popup previews icon
+.PHONY: build clean run app install uninstall sync-patterns import-permissions test e2e e2e-claude e2e-codex test-popup previews icon
 
 CONFIG ?= release
 BUILD_DIR := .build/$(CONFIG)
@@ -90,6 +90,21 @@ MODEL ?= haiku
 e2e-claude:
 	swift build -c $(CONFIG)
 	$(BUILD_DIR)/nudge-test-e2e --claude --model $(MODEL) --bin-dir $(BUILD_DIR) --fixtures Tests/e2e/claude $(ONLY)
+
+# End-to-end, layer 2 for Codex: real Codex, driven over `codex app-server`
+# the way the ChatGPT app drives it, in throwaway CODEX_HOMEs and git repos
+# under /tmp, with the hooks install-codex-hook.sh writes pointed at this
+# build and an isolated Nudge. Asserts on real effects (did the command run,
+# did Codex fall back to its own prompt). Each temp home gets a copy of
+# ~/.codex/auth.json, deleted with it; ~/.codex's hooks.json and config.toml
+# are never loaded, and the run checks they didn't change. Uses a little of
+# your Codex usage per scenario (CODEX_MODEL, default gpt-6-luna).
+# Usage: make e2e-codex               (all scenarios in Tests/e2e/codex)
+#        make e2e-codex ONLY=deny     (scenarios whose name contains ONLY)
+CODEX_MODEL ?= gpt-6-luna
+e2e-codex:
+	swift build -c $(CONFIG)
+	$(BUILD_DIR)/nudge-test-e2e --codex --model $(CODEX_MODEL) --bin-dir $(BUILD_DIR) --fixtures Tests/e2e/codex $(ONLY)
 
 # Fires a test prompt directly at Nudge's HTTP server (bypasses Claude Code).
 # Usage: make test-popup            (default: git push --force, default mode)

@@ -1,0 +1,20 @@
+{
+  "description": "Stopping the turn while Nudge asks (turn/interrupt, the app's Stop): the Interrupt hook withdraws the prompt with the app-server still running, and nothing runs",
+  "policy": "untrusted",
+  "sandbox": "workspace-write",
+  "prompt": "Run exactly this one shell command and nothing else: `touch made-by-codex.txt`\n\nDo not look around first. If it is denied or fails, do not retry and do not try anything else; reply with one short line saying what happened, quoting any message you got.",
+  "respond": "interrupt",
+  "expectPrompt": {
+    "tool": "Bash",
+    "kind": null,
+    "event": "PermissionRequest",
+    "permissionMode": "default",
+    "matchedPattern": null
+  },
+  "expectCommandContains": [
+    "touch made-by-codex.txt"
+  ],
+  "expectFile": "made-by-codex.txt",
+  "expectFileExists": false,
+  "timeoutSeconds": 120
+}

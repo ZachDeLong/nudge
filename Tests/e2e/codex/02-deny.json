@@ -1,0 +1,20 @@
+{
+  "description": "Deny in Nudge: the command doesn't run, Codex never asks its own client, and Codex hears \"The user denied this in Nudge.\"",
+  "policy": "untrusted",
+  "sandbox": "workspace-write",
+  "prompt": "Run exactly this one shell command and nothing else: `touch made-by-codex.txt`\n\nDo not look around first. If it is denied or fails, do not retry and do not try anything else; reply with one short line saying what happened, quoting any message you got.",
+  "respond": "deny",
+  "expectPrompt": {
+    "tool": "Bash",
+    "kind": null,
+    "event": "PermissionRequest",
+    "permissionMode": "default",
+    "matchedPattern": null
+  },
+  "expectCommandContains": [
+    "touch made-by-codex.txt"
+  ],
+  "expectFile": "made-by-codex.txt",
+  "expectFileExists": false,
+  "timeoutSeconds": 120
+}
