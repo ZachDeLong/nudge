@@ -24,6 +24,12 @@ public struct AgentHookEvent: Codable, Equatable, Sendable {
     public let promptPreview: String?
     public let message: String?
     public let error: String?
+    /// `CallKey` of the tool call, for PostToolUse and PostToolUseFailure:
+    /// lets the app withdraw a PermissionRequest prompt for a call Claude
+    /// already ran.
+    public let callKey: String?
+    /// Claude Code's `agent_id` when the event came from a subagent.
+    public let subagentID: String?
 
     public init(
         id: String = UUID().uuidString,
@@ -38,8 +44,12 @@ public struct AgentHookEvent: Codable, Equatable, Sendable {
         toolSummary: String?,
         promptPreview: String?,
         message: String?,
-        error: String?
+        error: String?,
+        callKey: String? = nil,
+        subagentID: String? = nil
     ) {
+        self.callKey = callKey
+        self.subagentID = subagentID
         self.id = id
         self.occurredAt = occurredAt
         self.nudgeSessionID = nudgeSessionID

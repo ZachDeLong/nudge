@@ -101,6 +101,15 @@ public actor PromptQueue {
         removePrompt(id: id, error: .withdrawn)
     }
 
+    /// Withdraws pending prompts that `matching` picks, oldest first, at most
+    /// `limit` of them. For prompts the agent answered in its own UI, where
+    /// no hangup tells us. Returns how many were withdrawn.
+    @discardableResult
+    public func withdraw(limit: Int = .max, where matching: @Sendable (Prompt) -> Bool) -> Int {
+        let ids = pending.map(\.prompt).filter(matching).prefix(limit).map(\.id)
+        return ids.filter { removePrompt(id: $0, error: .withdrawn) }.count
+    }
+
     @discardableResult
     private func removePrompt(id: String, error: QueueError = .timedOut) -> Bool {
         guard let idx = pending.firstIndex(where: { $0.prompt.id == id }) else { return false }

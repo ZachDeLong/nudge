@@ -239,11 +239,42 @@ actor PromptServer {
         do {
             let event = try JSONDecoder().decode(AgentHookEvent.self, from: Data(req.body))
             await activityStore.record(event)
+            // Before answering: Claude waits for this hook, so a later prompt
+            // can't be swept by an event that arrives late.
+            await withdrawAnsweredElsewhere(event)
             let resp = HTTPCodec.writeResponse(status: 200, contentType: "text/plain", body: Array("ok".utf8))
             await sendAndAwait(Data(resp), on: conn)
         } catch {
             let resp = HTTPCodec.writeResponse(status: 400, contentType: "text/plain", body: Array("bad json".utf8))
             await sendAndAwait(Data(resp), on: conn)
+        }
+    }
+
+    /// Drops PermissionRequest prompts Claude stopped waiting on because you
+    /// answered its own dialog. Esc or No in the terminal kills the hook,
+    /// which the hangup watch catches. Yes doesn't: Claude leaves the hook
+    /// running until it answers or times out (Claude Code 2.1.283), so its
+    /// prompt would sit in the menu bar answering nothing. The agent hook's
+    /// events stand in for that missing signal:
+    ///
+    /// - PostToolUse / PostToolUseFailure: that exact call was allowed and ran.
+    /// - Stop: the main thread's turn is over, so nothing it asked is still
+    ///   waiting. Subagent prompts are left alone; a background subagent can
+    ///   outlive the turn.
+    /// - SessionEnd: nothing in the session is waiting.
+    private func withdrawAnsweredElsewhere(_ event: AgentHookEvent) async {
+        guard let session = event.claudeSessionID else { return }
+        switch event.eventName {
+        case "PostToolUse", "PostToolUseFailure":
+            guard let key = event.callKey else { return }
+            await queue.withdraw(limit: 1) { $0.isPermissionRequest && $0.callKey == key }
+        case "Stop", "StopFailure":
+            guard event.subagentID == nil else { return }
+            await queue.withdraw { $0.isPermissionRequest && $0.sessionId == session && $0.subagentId == nil }
+        case "SessionEnd":
+            await queue.withdraw { $0.isPermissionRequest && $0.sessionId == session }
+        default:
+            return
         }
     }
 

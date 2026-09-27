@@ -20,6 +20,15 @@ let env = ProcessInfo.processInfo.environment
 let eventName = string(inputJSON["hook_event_name"]) ?? "Unknown"
 let toolInput = inputJSON["tool_input"] as? [String: Any]
 
+// A finished tool call names the call the same way nudge-hook does, so the
+// app can drop a PermissionRequest prompt you already answered in Claude.
+let callKey: String? = {
+    guard ["PostToolUse", "PostToolUseFailure"].contains(eventName),
+          let session = inputJSON["session_id"] as? String,
+          let tool = inputJSON["tool_name"] as? String else { return nil }
+    return CallKey.make(sessionID: session, toolName: tool, toolInput: inputJSON["tool_input"])
+}()
+
 let event = AgentHookEvent(
     nudgeSessionID: env["NUDGE_AGENT_SESSION_ID"],
     claudeSessionID: string(inputJSON["session_id"]),
@@ -31,7 +40,9 @@ let event = AgentHookEvent(
     toolSummary: summarizeTool(name: string(inputJSON["tool_name"]), input: toolInput),
     promptPreview: preview(string(inputJSON["prompt"])),
     message: string(inputJSON["message"]),
-    error: string(inputJSON["error"]) ?? string(inputJSON["error_details"])
+    error: string(inputJSON["error"]) ?? string(inputJSON["error_details"]),
+    callKey: callKey,
+    subagentID: string(inputJSON["agent_id"])
 )
 
 guard let port = NudgeClient.locatePort() else {
