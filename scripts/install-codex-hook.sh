@@ -5,6 +5,8 @@
 #   ask for approval, and Nudge answers in its place.
 # - Interrupt runs nudge-agent-hook. Codex leaves the PermissionRequest hook
 #   running when you stop a turn; this tells Nudge to drop that prompt.
+# - Stop runs nudge-agent-hook too. When Codex finishes while you're away from
+#   it, Nudge shows its last message with a reply box.
 #
 # Codex trusts each hook entry by its position and content, so this edits in
 # place: an entry that's already right is left alone, an older Nudge entry is
@@ -83,6 +85,7 @@ UPDATED=$(jq --arg bin "$BIN_DIR" --argjson uninstall "$UNINSTALL" '
       else
         place("PermissionRequest"; "nudge-hook"; handler("nudge-hook"))
         | place("Interrupt"; "nudge-agent-hook"; handler("nudge-agent-hook"))
+        | place("Stop"; "nudge-agent-hook"; handler("nudge-agent-hook"))
       end
     | if (.hooks | length) == 0 then del(.hooks) else . end
 ' <<<"$CURRENT")
@@ -125,5 +128,5 @@ if [[ -x "$CODEX_CLI" ]]; then
 else
     echo "    codex"
 fi
-echo "  then type /hooks and trust Nudge's two entries. (That screen can trust"
+echo "  then type /hooks and trust Nudge's three entries. (That screen can trust"
 echo "  every pending hook at once, so check the list first.)"

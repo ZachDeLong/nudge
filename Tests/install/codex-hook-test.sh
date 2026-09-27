@@ -50,6 +50,7 @@ d=$(home fresh)
 run "$d"
 check "fresh: PermissionRequest entry" test "$(q "$d" '.hooks.PermissionRequest')" = "[{\"hooks\":[{\"type\":\"command\",\"command\":\"$HOOK\"}]}]"
 check "fresh: Interrupt entry" test "$(q "$d" '.hooks.Interrupt')" = "[{\"hooks\":[{\"type\":\"command\",\"command\":\"$AGENT_HOOK\"}]}]"
+check "fresh: Stop entry (finished messages)" test "$(q "$d" '.hooks.Stop')" = "[{\"hooks\":[{\"type\":\"command\",\"command\":\"$AGENT_HOOK\"}]}]"
 check "fresh: no backup of a file that wasn't there" test "$(backups "$d")" = 0
 
 # An existing install: Nudge's PermissionRequest entry stays exactly where it

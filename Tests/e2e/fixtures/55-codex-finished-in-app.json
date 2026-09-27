@@ -1,0 +1,26 @@
+{
+  "description": "Codex finishes while the ChatGPT app is in front: no message (its own window shows it)",
+  "patterns": [],
+  "hook": "nudge-agent-hook",
+  "args": [
+    "--agent",
+    "codex"
+  ],
+  "env": {
+    "NUDGE_TEST_FRONTMOST": "com.openai.codex"
+  },
+  "payload": {
+    "session_id": "01a0e0aa-1111-7db0-a373-2832df895844",
+    "turn_id": "01a0e0aa-2222-7f73-86ec-073a3d020b44",
+    "transcript_path": null,
+    "cwd": "/Users/dev/code/api",
+    "hook_event_name": "Stop",
+    "model": "gpt-6-luna",
+    "permission_mode": "default",
+    "stop_hook_active": false,
+    "last_assistant_message": "Renamed listUsers to getUsers in 2 files."
+  },
+  "expectPrompt": null,
+  "expectStdout": null,
+  "expectExit": 0
+}

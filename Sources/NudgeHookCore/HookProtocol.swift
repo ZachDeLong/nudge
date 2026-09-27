@@ -124,16 +124,30 @@ public let toolsLeftToAgentUI: Set<String> = ["ExitPlanMode", "AskUserQuestion"]
 /// finished message, so Nudge can't hold up automation.
 public let interactiveEntrypoints: Set<String> = ["cli", "claude-desktop", "claude-vscode"]
 
-/// Whether a Stop should become a "Claude finished" message: Claude only (the
-/// Codex hook isn't wired), an interactive session, the main thread, and
-/// you're not looking at the session already.
+/// Whether a Stop should become a "finished" message: a session a person is
+/// driving, the main thread, and you're not looking at the session already.
+/// Claude says how it was started (`entrypoint`); Codex doesn't, so its hook's
+/// ancestors (`codexAncestors`, nearest first) tell a `codex exec` run apart.
 public func shouldOfferFinishedMessage(agent: HookAgent, eventName: String, entrypoint: String?,
+                                       codexAncestors: [[String]] = [],
                                        isSubagent: Bool, userIsAtSession: Bool) -> Bool {
-    agent == .claude
-        && eventName == "Stop"
-        && !isSubagent
-        && interactiveEntrypoints.contains(entrypoint ?? "")
-        && !userIsAtSession
+    guard eventName == "Stop", !isSubagent, !userIsAtSession else { return false }
+    switch agent {
+    case .claude: return interactiveEntrypoints.contains(entrypoint ?? "")
+    case .codex:  return !codexRunIsScripted(ancestorArguments: codexAncestors)
+    }
+}
+
+/// A `codex exec` run (alias `e`): scripted, nobody to tell. The TUI (`codex`)
+/// and the ChatGPT app (`codex app-server`) have a person behind them. With
+/// no Codex process in sight, assume a person.
+public func codexRunIsScripted(ancestorArguments: [[String]]) -> Bool {
+    guard let codex = ancestorArguments.first(where: {
+        URL(fileURLWithPath: $0.first ?? "").lastPathComponent == "codex"
+    }) else { return false }
+    // Anywhere, not just first: options like `-c model=…` can come before it.
+    let args = codex.dropFirst()
+    return args.contains("exec") || args.contains("e")
 }
 
 /// What the popover shows: Claude's last message, trimmed and capped.

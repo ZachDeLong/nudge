@@ -86,10 +86,11 @@ public enum FrontmostApp {
     /// and IDEs above, Codex's desktop apps, and the Claude app (its prompt
     /// card answers to esc, and ⏎ sends a message). Nudge's global keys stand
     /// down while one is in front.
-    /// Where a Claude Code session shows itself: any terminal or IDE, plus
-    /// the Claude app for sessions running in it.
-    public static func sessionUIBundleIDs(entrypoint: String?) -> Set<String> {
-        entrypoint == "claude-desktop"
+    /// Where a session shows itself: any terminal or IDE, plus the Claude
+    /// app for sessions running in it, or Codex's apps for Codex.
+    public static func sessionUIBundleIDs(entrypoint: String?, agent: String? = nil) -> Set<String> {
+        if agent == "codex" { return terminalBundleIDs.union(["com.openai.codex", "com.openai.chat"]) }
+        return entrypoint == "claude-desktop"
             ? terminalBundleIDs.union(["com.anthropic.claudefordesktop"])
             : terminalBundleIDs
     }

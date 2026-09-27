@@ -61,8 +61,9 @@ Nudge answers Codex's approval requests too, from the CLI or the ChatGPT app. If
 
 - `PermissionRequest` runs `nudge-hook --agent codex` when Codex is about to ask. The popover says Codex and shows the command, or the patch and the files it touches.
 - `Interrupt` runs `nudge-agent-hook --agent codex`. Stop a turn in Codex and Nudge's copy of its prompt goes away.
+- `Stop` runs `nudge-agent-hook --agent codex`. When Codex finishes while you're away, Nudge shows its last message with a reply box, the same as for Claude.
 
-Codex skips new hooks until you trust them. Do it once: run `codex` in a terminal (the ChatGPT app ships it at `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex`), type `/hooks`, and trust Nudge's two entries.
+Codex skips new hooks until you trust them. Do it once: run `codex` in a terminal (the ChatGPT app ships it at `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex`), type `/hooks`, and trust Nudge's three entries. Updating from 1.5.0 or earlier, run `nudge-setup` again to add the `Stop` entry, then trust it the same way.
 
 A few things work differently from Claude Code:
 
@@ -79,7 +80,7 @@ In auto mode Claude asks less and runs longer, so the useful moment is when it's
 - Dismiss it, and Claude stops as usual.
 - Go back to the terminal (or the Claude app, for its sessions) and Nudge lets go on its own, so the session is yours to type in. It also lets go after five minutes.
 
-It never takes the keyboard from what you're typing: click the reply box to answer. It stays out of the way while you're at the session, for `claude -p` and scripts, and for subagents. Switch it off with "Tell me when Claude finishes".
+It works for Codex too, in the CLI and the ChatGPT app (see [Codex](#codex)). It never takes the keyboard from what you're typing: click the reply box to answer. It stays out of the way while you're at the session, for `claude -p`, `codex exec` and other scripts, and for subagents. Switch it off with "Tell me when Claude finishes".
 
 ## Patterns
 

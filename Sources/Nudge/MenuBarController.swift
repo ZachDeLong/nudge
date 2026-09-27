@@ -329,7 +329,7 @@ final class MenuBarController: NSObject {
             Task {
                 for prompt in await queue.snapshot()
                 where prompt.resolvedKind == .finished
-                    && FrontmostApp.sessionUIBundleIDs(entrypoint: prompt.entrypoint).contains(front) {
+                    && FrontmostApp.sessionUIBundleIDs(entrypoint: prompt.entrypoint, agent: prompt.agent).contains(front) {
                     _ = await queue.resolve(id: prompt.id, with: .cancel)
                 }
             }

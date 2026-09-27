@@ -74,9 +74,10 @@ let entrypoint = env["CLAUDE_CODE_ENTRYPOINT"]
 // running the tests. Only honored on a harness instance.
 let frontmost = (ConfigDir.isOverridden ? env["NUDGE_TEST_FRONTMOST"] : nil)
     ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-let atSession = frontmost.map(FrontmostApp.sessionUIBundleIDs(entrypoint: entrypoint).contains) ?? false
+let atSession = frontmost.map(FrontmostApp.sessionUIBundleIDs(entrypoint: entrypoint, agent: event.agent).contains) ?? false
 guard prefs.finishedMessages,
       shouldOfferFinishedMessage(agent: agent, eventName: eventName, entrypoint: entrypoint,
+                                 codexAncestors: agent == .codex ? ProcessTree.ancestorArguments() : [],
                                  isSubagent: event.subagentID != nil, userIsAtSession: atSession) else {
     exit(0)
 }
@@ -85,10 +86,11 @@ let finished = Prompt(
     id: UUID().uuidString,
     kind: .finished,
     tool: "Stop",
-    command: finishedMessageText(string(inputJSON["last_assistant_message"])),
+    command: finishedMessageText(string(inputJSON["last_assistant_message"]), agentName: agent.displayName),
     cwd: event.cwd ?? FileManager.default.currentDirectoryPath,
     sessionId: event.claudeSessionID ?? "unknown",
     permissionMode: event.permissionMode,
+    agent: event.agent,
     event: "Stop",
     entrypoint: entrypoint
 )

@@ -650,7 +650,17 @@ expect(shouldOfferFinishedMessage(agent: .claude, eventName: "Stop", entrypoint:
 expect(shouldOfferFinishedMessage(agent: .claude, eventName: "Stop", entrypoint: "claude-desktop", isSubagent: false, userIsAtSession: false), true, "finished: Claude app session")
 expect(shouldOfferFinishedMessage(agent: .claude, eventName: "Stop", entrypoint: "cli", isSubagent: true, userIsAtSession: false), false, "finished: subagents don't count")
 expect(shouldOfferFinishedMessage(agent: .claude, eventName: "PostToolUse", entrypoint: "cli", isSubagent: false, userIsAtSession: false), false, "finished: only on Stop")
-expect(shouldOfferFinishedMessage(agent: .codex, eventName: "Stop", entrypoint: "cli", isSubagent: false, userIsAtSession: false), false, "finished: Claude only for now")
+let codexTUI = [["/bin/sh", "-c", "nudge-agent-hook --agent codex"], ["/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex", "--model", "gpt-6"]]
+let codexApp = [["/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex", "app-server"]]
+let codexExec = [["/usr/local/bin/codex", "exec", "--skip-git-repo-check", "fix it"]]
+let codexExecAlias = [["codex", "-c", "model=gpt-6", "e", "fix it"]]
+expect(shouldOfferFinishedMessage(agent: .codex, eventName: "Stop", entrypoint: nil, codexAncestors: codexTUI, isSubagent: false, userIsAtSession: false), true, "finished: Codex TUI")
+expect(shouldOfferFinishedMessage(agent: .codex, eventName: "Stop", entrypoint: nil, codexAncestors: codexApp, isSubagent: false, userIsAtSession: false), true, "finished: Codex in the ChatGPT app")
+expect(shouldOfferFinishedMessage(agent: .codex, eventName: "Stop", entrypoint: nil, codexAncestors: codexExec, isSubagent: false, userIsAtSession: false), false, "finished: codex exec never waits on you")
+expect(codexRunIsScripted(ancestorArguments: codexExecAlias), true, "finished: codex e (alias) is scripted too")
+expect(codexRunIsScripted(ancestorArguments: [["/usr/bin/python3", "exec.py"]]), false, "finished: no Codex in sight means a person")
+expect(shouldOfferFinishedMessage(agent: .codex, eventName: "Stop", entrypoint: nil, codexAncestors: codexTUI, isSubagent: false, userIsAtSession: true), false, "finished: Codex, you're at it")
+expect(FrontmostApp.sessionUIBundleIDs(entrypoint: nil, agent: "codex").contains("com.openai.codex"), true, "finished: the ChatGPT app is Codex's own UI")
 expect(finishedMessageText("  Pushed to origin/main.\n"), "Pushed to origin/main.", "finished: message trimmed")
 expect(finishedMessageText(nil), "Claude finished its turn.", "finished: no message still says something")
 expect(finishedMessageText(String(repeating: "a", count: 5000)).count, 4001, "finished: long messages capped")
