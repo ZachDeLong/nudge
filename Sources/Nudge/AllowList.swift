@@ -3,26 +3,27 @@ import NudgeCore
 
 /// In-memory allow list for "Allow this session" decisions. Reset on app quit.
 ///
-/// Keyed on tool *and* command. The command string alone is ambiguous across
-/// families — `Bash` carries a shell command while `Edit`/`Write` carry a file
-/// path — so a bare string key lets an allow granted for one tool satisfy a
-/// prompt from another. Collisions are unlikely in practice; scoping the key
-/// costs nothing and removes the question.
+/// Keyed on agent, tool *and* command. The command string alone is ambiguous
+/// across families — `Bash` carries a shell command while `Edit`/`Write` carry
+/// a file path — so a bare string key lets an allow granted for one tool
+/// satisfy a prompt from another. The agent is in the key so allowing a
+/// command for Codex doesn't also allow it for Claude, or the other way round.
 @MainActor
 final class SessionAllowList {
     private struct Key: Hashable {
+        let agent: String
         let tool: String
         let command: String
     }
 
     private var allowed: Set<Key> = []
 
-    func add(tool: String, command: String) {
-        allowed.insert(Key(tool: tool, command: command))
+    func add(agent: String?, tool: String, command: String) {
+        allowed.insert(Key(agent: agent ?? "claude", tool: tool, command: command))
     }
 
-    func contains(tool: String, command: String) -> Bool {
-        allowed.contains(Key(tool: tool, command: command))
+    func contains(agent: String?, tool: String, command: String) -> Bool {
+        allowed.contains(Key(agent: agent ?? "claude", tool: tool, command: command))
     }
 
     func clear() {

@@ -385,7 +385,7 @@ final class MenuBarController: NSObject {
         // Auto-resolve via session allow list before any UI (permission only).
         if let prompt = prompt,
            prompt.resolvedKind == .permission,
-           sessionAllow.contains(tool: prompt.tool, command: prompt.command) {
+           sessionAllow.contains(agent: prompt.agent, tool: prompt.tool, command: prompt.command) {
             Task { await queue.resolve(id: prompt.id, with: .allow) }
             return
         }
@@ -550,13 +550,13 @@ final class MenuBarController: NSObject {
         }
         // Also session-allow this exact command so it doesn't re-prompt within
         // the same Claude Code session (Claude caches settings.json at start).
-        sessionAllow.add(tool: prompt.tool, command: prompt.command)
+        sessionAllow.add(agent: prompt.agent, tool: prompt.tool, command: prompt.command)
         resolve(.allow)
     }
 
     private func sessionAllowCurrent() {
         guard let prompt = currentPrompt else { return }
-        sessionAllow.add(tool: prompt.tool, command: prompt.command)
+        sessionAllow.add(agent: prompt.agent, tool: prompt.tool, command: prompt.command)
         resolve(.allow)
     }
 
