@@ -29,6 +29,17 @@ jobs:
       - name: Run XCTest suite
         run: swift test -c release
 
+      - name: Codex hook installer tests
+        run: ./Tests/install/codex-hook-test.sh
+
+      # Layer 1: recorded hook payloads through the real nudge-hook into a
+      # real, isolated Nudge (its own temp config dir, port and token),
+      # answered over the test API. The runner's GUI session hosts the menu
+      # bar app. Layers 2 (real claude) and e2e-codex need logins, so they
+      # stay local.
+      - name: End-to-end (layer 1)
+        run: make e2e
+
       - name: Build .app bundle
         run: ./scripts/build-app.sh .build/release
 
