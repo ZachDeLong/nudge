@@ -12,7 +12,7 @@ It's a quality-of-life tool, not a security tool. The terminal still works: answ
 
 ## What's in the box
 
-- **Permission popover.** Allow, Deny, allow for this session, or always allow. Enter and Esc work from any app once you grant Accessibility access.
+- **Permission popover.** Allow, Deny, allow for this session, or always allow. Enter and Esc work from any app once you grant Accessibility access (or switch them off).
 - **`nudge-ask`.** A CLI Claude can call when it needs a typed answer from you. Same popover, with a text field.
 - **Agent sessions** (experimental). `nudge-claude` runs Claude Code in tmux, and the menu bar shows the live transcript with a reply box.
 - **`nudge-update`.** Checks GitHub for a new release and installs it after verifying the checksum.
@@ -87,7 +87,7 @@ Click the menu bar icon when there's no prompt up, or right-click it to get the 
 
 A few things the panel doesn't tell you:
 
-- **⏎ / esc from any app** needs Accessibility access: System Settings → Privacy & Security → Accessibility, which macOS 27 renamed Device Control and Data Access. The Enable… button in the panel opens it. Since 1.4.2 macOS keeps that grant across updates. Coming from an older version, remove Nudge from the list and add it back once. Keys are ignored for the first 0.6s a prompt is up, so you won't approve something by accident while typing.
+- **⏎ / esc from any app** needs Accessibility access: System Settings → Privacy & Security → Accessibility, which macOS 27 renamed Device Control and Data Access. The Enable… button in the panel opens it. Since 1.4.2 macOS keeps that grant across updates. Coming from an older version, remove Nudge from the list and add it back once. Keys are ignored for the first 0.6s a prompt is up, and until you've stopped typing elsewhere for a second, so the Enter at the end of a paragraph doesn't approve anything. If you'd rather only click, switch off "Answer with ⏎ and esc".
 - **Quit means quit.** The hooks won't relaunch Nudge until you open it yourself. If it crashes, it comes back on the next hook call.
 
 ## nudge-ask

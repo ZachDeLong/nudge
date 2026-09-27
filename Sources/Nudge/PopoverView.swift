@@ -12,6 +12,7 @@ struct PopoverView: View {
     let onCancelAsk: () -> Void
     let onTogglePause: () -> Void
     let onToggleSkipTerminal: () -> Void
+    let onToggleGlobalKeys: () -> Void
     let onQuit: () -> Void
     let onEnableGlobalKeys: () -> Void
     @ObservedObject var agentChat: AgentChatStore
@@ -115,7 +116,7 @@ struct PopoverView: View {
           HStack(spacing: 8) {
             // Permission panels never take key, so the keycaps are only
             // true when the global monitor can hear them.
-            let keys = state.globalKeysAvailable
+            let keys = state.globalKeysAvailable && state.prefs.globalKeys
             Button(action: onDeny) {
                 ButtonLabel(title: "Deny", key: keys ? "esc" : nil)
             }
@@ -251,7 +252,18 @@ struct PopoverView: View {
                 )
             )
 
-            if !state.globalKeysAvailable {
+            if state.globalKeysAvailable {
+                SettingRow(
+                    symbol: "keyboard",
+                    title: "Answer with ⏎ and esc",
+                    detail: "From any app, once you've stopped typing",
+                    isOn: Binding(
+                        get: { prefs.globalKeys },
+                        set: { _ in onToggleGlobalKeys() }
+                    )
+                )
+                .transition(.opacity)
+            } else {
                 HStack(spacing: 10) {
                     Image(systemName: "keyboard")
                         .font(.system(size: 12, weight: .medium))

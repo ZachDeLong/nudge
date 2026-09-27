@@ -11,15 +11,33 @@ public struct Prefs: Codable, Equatable {
     /// already a terminal/IDE.
     public var skipWhenTerminalFocused: Bool
 
+    /// When true (and Nudge has Accessibility access), ⏎ allows and esc
+    /// denies a permission prompt from whatever app is in front.
+    public var globalKeys: Bool
+
     public static let `default` = Prefs(enabled: true, skipWhenTerminalFocused: true)
 
     public static var url: URL {
         ConfigDir.url.appendingPathComponent("prefs.json")
     }
 
-    public init(enabled: Bool, skipWhenTerminalFocused: Bool) {
+    public init(enabled: Bool, skipWhenTerminalFocused: Bool, globalKeys: Bool = true) {
         self.enabled = enabled
         self.skipWhenTerminalFocused = skipWhenTerminalFocused
+        self.globalKeys = globalKeys
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, skipWhenTerminalFocused, globalKeys
+    }
+
+    /// Keys added later are optional, so an older prefs.json keeps its
+    /// other settings instead of failing to decode and resetting them all.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        skipWhenTerminalFocused = try c.decode(Bool.self, forKey: .skipWhenTerminalFocused)
+        globalKeys = try c.decodeIfPresent(Bool.self, forKey: .globalKeys) ?? true
     }
 
     /// Loads from disk, falling back to defaults when the file is missing

@@ -29,8 +29,8 @@ final class MenuBarController: NSObject {
     private var agentRefreshTimer: Timer?
     private var agentRefreshSequence: Int = 0
     private var keyMonitor: Any?
-    /// Global ⏎/esc are ignored until this moment. See `armKeys()`.
-    private var keysArmedAt: Date = .distantFuture
+    /// When global ⏎/esc may answer. See `armKeys()`.
+    private var answerKeys = AnswerKeys()
     private var clickMonitor: Any?
     private var idleKeyMonitor: Any?
     private var settings: Prefs = .load()
@@ -205,6 +205,17 @@ final class MenuBarController: NSObject {
         skipItem.state = settings.skipWhenTerminalFocused ? .on : .off
         menu.addItem(skipItem)
 
+        if GlobalKeys.isAvailable {
+            let keysItem = NSMenuItem(
+                title: "Answer with ⏎ and esc",
+                action: #selector(toggleGlobalKeys),
+                keyEquivalent: ""
+            )
+            keysItem.target = self
+            keysItem.state = settings.globalKeys ? .on : .off
+            menu.addItem(keysItem)
+        }
+
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
@@ -229,6 +240,10 @@ final class MenuBarController: NSObject {
 
     @objc private func toggleSkipWhenTerminalFocused() {
         toggleSkipTerminalAndRefresh()
+    }
+
+    @objc private func toggleGlobalKeys() {
+        toggleGlobalKeysAndRefresh()
     }
 
     private func togglePauseAndRefresh() {
@@ -268,6 +283,21 @@ final class MenuBarController: NSObject {
         }
     }
 
+    private func toggleGlobalKeysAndRefresh() {
+        settings.globalKeys.toggle()
+        settings.save()
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+            store.prefs = settings
+        }
+        // The right-click menu can flip this with a prompt up.
+        if settings.globalKeys, currentPrompt?.resolvedKind == .permission {
+            startKeyMonitor()
+        } else if !settings.globalKeys {
+            stopKeyMonitor()
+        }
+        if panel.isVisible { animatedRefit() }
+    }
+
     @objc private func quitApp() {
         NSApp.terminate(nil)
     }
@@ -283,6 +313,7 @@ final class MenuBarController: NSObject {
             onCancelAsk: { [weak self] in self?.resolve(.cancel) },
             onTogglePause: { [weak self] in self?.togglePauseAndRefresh() },
             onToggleSkipTerminal: { [weak self] in self?.toggleSkipTerminalAndRefresh() },
+            onToggleGlobalKeys: { [weak self] in self?.toggleGlobalKeysAndRefresh() },
             onQuit: { [weak self] in self?.quitApp() },
             onEnableGlobalKeys: { [weak self] in self?.enableGlobalKeys() },
             agentChat: agentChat,
@@ -599,29 +630,29 @@ final class MenuBarController: NSObject {
 
     // MARK: - Global keyboard
 
-    /// How long a prompt must be on screen before global ⏎/esc count. The
-    /// monitor sees keys typed into *any* app, so without this, pressing Enter
-    /// in a browser form just as a prompt lands would approve a command no one
-    /// has read. Same idea as the delay on browser install dialogs.
-    private static let keyArmingDelay: TimeInterval = 0.6
-
-    /// Restarts the arming delay. Called whenever a prompt appears or the
-    /// panel's prompt changes.
+    /// Restarts the arming delay (see `AnswerKeys`). Called whenever a
+    /// prompt appears or the panel's prompt changes. Typing from just before
+    /// the monitor started counts too.
     private func armKeys() {
-        keysArmedAt = Date().addingTimeInterval(Self.keyArmingDelay)
+        let sinceLastKey = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
+        let now = Date()
+        answerKeys.promptShown(at: now, lastKeyDown: now.addingTimeInterval(-sinceLastKey))
     }
 
     private func startKeyMonitor() {
         stopKeyMonitor()
+        guard settings.globalKeys else { return }
         keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.panel.isVisible,
-                  Self.isBareKeyPress(event),
-                  Date() >= self.keysArmedAt else { return }
-            if event.keyCode == 36 || event.keyCode == 76 {
-                DispatchQueue.main.async { self.resolve(.allow) }
-            } else if event.keyCode == 53 {
-                DispatchQueue.main.async { self.resolve(.deny) }
+            guard let self, self.panel.isVisible else { return }
+            let isAllow = event.keyCode == 36 || event.keyCode == 76
+            let isDeny = event.keyCode == 53
+            guard (isAllow || isDeny), Self.isBareKeyPress(event) else {
+                // Typing somewhere else: hold off until it stops.
+                self.answerKeys.typed(at: Date())
+                return
             }
+            guard self.answerKeys.isArmed(at: Date()) else { return }
+            DispatchQueue.main.async { self.resolve(isAllow ? .allow : .deny) }
         }
     }
 
