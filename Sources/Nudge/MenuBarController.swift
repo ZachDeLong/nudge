@@ -128,8 +128,8 @@ final class MenuBarController: NSObject {
         if arrived { bounceIcon() }
     }
 
-    /// A short scale bounce on the status item when a prompt lands — the
-    /// literal nudge. Scales about the centre by composing translations into
+    /// A small scale pop on the status item when a prompt lands: the literal
+    /// nudge. Scales about the centre by composing translations into
     /// the transform, so AppKit's ownership of the layer's anchorPoint and
     /// position is left alone.
     private func bounceIcon() {
@@ -144,10 +144,10 @@ final class MenuBarController: NSObject {
             return NSValue(caTransform3D: t)
         }
         let bounce = CAKeyframeAnimation(keyPath: "transform")
-        bounce.values = [1.0, 1.3, 0.92, 1.06, 1.0].map(scaled)
-        bounce.keyTimes = [0, 0.3, 0.6, 0.82, 1]
-        bounce.duration = 0.45
-        bounce.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 4)
+        bounce.values = [1.0, 1.15, 1.0].map(scaled)
+        bounce.keyTimes = [0, 0.4, 1]
+        bounce.duration = 0.3
+        bounce.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 2)
         layer.add(bounce, forKey: "bounce")
     }
 
@@ -222,7 +222,7 @@ final class MenuBarController: NSObject {
         settings.enabled.toggle()
         settings.save()
         // The store drives the idle UI, so the switch and subtitle animate in
-        // place — no re-show, no replayed drop-in.
+        // place — no re-show, no replayed fade-in.
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
             store.prefs = settings
         }
@@ -419,7 +419,7 @@ final class MenuBarController: NSObject {
         }
 
         // Visible panel: cross-fade to the new content in place. Hidden: no
-        // animation on the state — the drop-in in show() is the entrance.
+        // animation on the state — the fade-in in show() is the entrance.
         withAnimation((wasVisible && !reduceMotion) ? .easeInOut(duration: 0.22) : nil) {
             store.prompt = prompt
             store.queueDepth = depth
@@ -511,7 +511,7 @@ final class MenuBarController: NSObject {
         guard panel.isVisible else { return }
         stopKeyMonitor()
         stopPulse()
-        withAnimation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0.25)) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
             store.notice = notice
         }
         noticeTask?.cancel()
@@ -788,7 +788,7 @@ final class PromptPanel {
     var isKey: Bool { panel.isKeyWindow }
     var windowFrame: NSRect { panel.frame }
 
-    /// System-wide "Reduce motion" — swap the slide+overshoot for a plain fade.
+    /// System-wide "Reduce motion": no animated resizing.
     private var reduceMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
@@ -876,15 +876,10 @@ final class PromptPanel {
 
         let finalOrigin = computeOrigin(anchorTo: button)
 
-        // Drop-in: start 12px above the resting position and 0 alpha, then
-        // snap into place with a back-out (light overshoot). Kept short so the
-        // animation stays clear of the menu bar region throughout. With Reduce
-        // Motion on, it is a fade in place.
-        let reduceMotion = self.reduceMotion
-        var startOrigin = finalOrigin
-        if !reduceMotion { startOrigin.y += 12 }
+        // A quick fade in place, like Control Center and other menu bar
+        // panels. No slide: a moving Liquid Glass window reads as lag.
         panel.alphaValue = 0
-        panel.setFrameOrigin(startOrigin)
+        panel.setFrameOrigin(finalOrigin)
         // Gate key-window eligibility BEFORE ordering front. Permission
         // popovers stay non-keyable so SwiftUI Menu interactions can't
         // trigger a focus grab (which left Allow stuck in its blue
@@ -897,18 +892,11 @@ final class PromptPanel {
             panel.makeKey()
         }
 
-        NSAnimationContext.runAnimationGroup({ ctx in
-            if reduceMotion {
-                ctx.duration = 0.12
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            } else {
-                ctx.duration = 0.26
-                // Ease-out-back: slight overshoot at the end for a "drop" feel.
-                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.56, 0.64, 1.0)
-            }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
-            panel.animator().setFrameOrigin(finalOrigin)
-        })
+        }
     }
 
     private func fittingContentSize() -> NSSize {
@@ -922,15 +910,10 @@ final class PromptPanel {
 
     func hide() {
         guard panel.isVisible else { return }
-        let reduceMotion = self.reduceMotion
-        let currentOrigin = panel.frame.origin
-        var endOrigin = currentOrigin
-        if !reduceMotion { endOrigin.y += 14 }
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = reduceMotion ? 0.1 : 0.14
+            ctx.duration = 0.12
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
-            panel.animator().setFrameOrigin(endOrigin)
         }, completionHandler: { [weak self] in
             self?.panel.orderOut(nil)
             self?.panel.alphaValue = 1
