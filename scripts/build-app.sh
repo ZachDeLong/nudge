@@ -19,4 +19,24 @@ done
 cp "$ROOT/Resources-Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
+# Signing with a stable identity (CI sets NUDGE_SIGN_IDENTITY from a
+# self-signed certificate) makes macOS identify Nudge by that certificate
+# instead of by each build's hash, so the Accessibility grant survives
+# updates. Without it the binaries keep the linker's ad-hoc signature.
+# NUDGE_SIGN_KEYCHAIN optionally names the keychain holding the identity.
+if [[ -n "${NUDGE_SIGN_IDENTITY:-}" ]]; then
+    sign=(codesign --force --timestamp=none --sign "$NUDGE_SIGN_IDENTITY")
+    if [[ -n "${NUDGE_SIGN_KEYCHAIN:-}" ]]; then
+        sign+=(--keychain "$NUDGE_SIGN_KEYCHAIN")
+    fi
+    # Helpers first: the bundle signature seals them as nested code.
+    for bin in "${BINARIES[@]}"; do
+        [[ "$bin" == Nudge ]] && continue
+        "${sign[@]}" --identifier "com.zachdelong.Nudge.$bin" "$APP/Contents/MacOS/$bin"
+    done
+    "${sign[@]}" "$APP"
+    codesign --verify --strict "$APP"
+    echo "✓ Signed with \"$NUDGE_SIGN_IDENTITY\""
+fi
+
 echo "✓ Assembled $APP"

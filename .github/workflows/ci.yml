@@ -40,6 +40,30 @@ jobs:
       - name: End-to-end (layer 1)
         run: make e2e
 
+      # A stable signing identity keeps macOS's Accessibility grant across
+      # updates (it's tied to the certificate, not each build's hash). The
+      # self-signed certificate lives in repo secrets; this puts it in a
+      # throwaway keychain for build-app.sh.
+      - name: Import signing certificate
+        env:
+          P12: ${{ secrets.NUDGE_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.NUDGE_SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$P12" ]; then
+            echo "No signing secret (e.g. a fork PR): keeping ad-hoc signatures"; exit 0
+          fi
+          KC="$RUNNER_TEMP/nudge-signing.keychain-db"
+          KCPW="$(uuidgen)"
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/nudge-signing.p12"
+          security import "$RUNNER_TEMP/nudge-signing.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/nudge-signing.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KCPW" "$KC" >/dev/null
+          echo "NUDGE_SIGN_IDENTITY=Nudge Self-Signed (ZachDeLong)" >> "$GITHUB_ENV"
+          echo "NUDGE_SIGN_KEYCHAIN=$KC" >> "$GITHUB_ENV"
+
       - name: Build .app bundle
         run: ./scripts/build-app.sh .build/release
 
