@@ -74,6 +74,20 @@ public actor PromptQueue {
         return true
     }
 
+    /// Answers every pending prompt `matching` picks, wherever it sits in the
+    /// queue: letting go in bulk (pausing, a switched-off feature, you went
+    /// back to the terminal). A click still goes through `resolve(id:)`, which
+    /// only ever answers the prompt on screen. Returns how many were answered.
+    @discardableResult
+    public func resolveAll(where matching: (Prompt) -> Bool, with response: DecisionResponse) -> Int {
+        let picked = pending.filter { matching($0.prompt) }
+        guard !picked.isEmpty else { return 0 }
+        pending.removeAll { matching($0.prompt) }
+        for p in picked { p.continuation.resume(returning: response) }
+        notifyHead()
+        return picked.count
+    }
+
     /// Convenience for permission decisions.
     @discardableResult
     public func resolve(id: String, with decision: Decision) -> Bool {

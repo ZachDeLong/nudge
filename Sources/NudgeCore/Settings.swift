@@ -82,19 +82,25 @@ public enum FrontmostApp {
         "com.todesktop.230313mzl4w4u92x",
     ]
 
-    /// Apps where ⏎ and esc belong to an agent's own prompt: the terminals
-    /// and IDEs above, Codex's desktop apps, and the Claude app (its prompt
-    /// card answers to esc, and ⏎ sends a message). Nudge's global keys stand
-    /// down while one is in front.
-    /// Where a session shows itself: any terminal or IDE, plus the Claude
-    /// app for sessions running in it, or Codex's apps for Codex.
+    /// The Claude app, and the apps Codex runs in (ChatGPT and its Codex app).
+    public static let claudeAppBundleIDs: Set<String> = ["com.anthropic.claudefordesktop"]
+    public static let codexAppBundleIDs: Set<String> = ["com.openai.codex", "com.openai.chat"]
+
+    private static let claudeAppSessionUI = terminalBundleIDs.union(claudeAppBundleIDs)
+    private static let codexSessionUI = terminalBundleIDs.union(codexAppBundleIDs)
+
+    /// Where a session shows itself, so its own prompt is already on screen:
+    /// any terminal or IDE, plus the Claude app for sessions running in it
+    /// (`CLAUDE_CODE_ENTRYPOINT=claude-desktop`), or Codex's apps for Codex.
     public static func sessionUIBundleIDs(entrypoint: String?, agent: String? = nil) -> Set<String> {
-        if agent == "codex" { return terminalBundleIDs.union(["com.openai.codex", "com.openai.chat"]) }
-        return entrypoint == "claude-desktop"
-            ? terminalBundleIDs.union(["com.anthropic.claudefordesktop"])
-            : terminalBundleIDs
+        if agent == "codex" { return codexSessionUI }
+        return entrypoint == "claude-desktop" ? claudeAppSessionUI : terminalBundleIDs
     }
 
+    /// Apps where ⏎ and esc belong to an agent's own prompt: the terminals
+    /// and IDEs above, the Claude app (its prompt card answers to esc, and ⏎
+    /// sends a message) and Codex's apps. Nudge's global keys stand down
+    /// while one is in front.
     public static let ownPromptBundleIDs: Set<String> =
-        terminalBundleIDs.union(["com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop"])
+        terminalBundleIDs.union(claudeAppBundleIDs).union(codexAppBundleIDs)
 }

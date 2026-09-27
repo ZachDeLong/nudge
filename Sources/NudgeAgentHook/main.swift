@@ -3,15 +3,19 @@ import Foundation
 import NudgeCore
 import NudgeHookCore
 
+// Reports what the agent is doing (tool calls, turns, sessions) so the app can
+// mirror sessions and drop prompts you answered elsewhere; on Stop it can also
+// raise a "finished" message (see the end of this file).
+//
 // Master switch, same as nudge-hook. The activity side channel is still Nudge,
 // so a paused Nudge shouldn't keep collecting. Checked before reading stdin to
 // match nudge-hook's ordering.
 //
-// Deliberately does NOT honor `skipWhenTerminalFocused`: that toggle exists to
-// suppress redundant popovers when you're already looking at the terminal, and
-// this hook shows no UI. Skipping on it would just punch holes in the activity
-// timeline the mirror panel reads from.
-guard Prefs.load().enabled else { exit(0) }
+// The activity report deliberately ignores `skipWhenTerminalFocused`: that
+// toggle suppresses redundant popovers, and skipping here would punch holes in
+// the timeline the mirror panel reads from.
+let prefs = Prefs.load()
+guard prefs.enabled else { exit(0) }
 
 let inputData = FileHandle.standardInput.readDataToEndOfFile()
 guard let inputJSON = try? JSONSerialization.jsonObject(with: inputData) as? [String: Any] else {
@@ -19,8 +23,8 @@ guard let inputJSON = try? JSONSerialization.jsonObject(with: inputData) as? [St
 }
 
 let env = ProcessInfo.processInfo.environment
-// Codex's hook entry passes `--agent codex`. Its only event here is Interrupt,
-// which tells the app to drop a prompt Codex stopped waiting on.
+// Codex's hook entry passes `--agent codex`, for Interrupt (drop a prompt Codex
+// stopped waiting on) and Stop (a finished message).
 let agent = HookAgent.from(arguments: CommandLine.arguments)
 let eventName = string(inputJSON["hook_event_name"]) ?? "Unknown"
 let toolInput = inputJSON["tool_input"] as? [String: Any]
@@ -68,17 +72,18 @@ do {
 // Stop hook with "block", so Claude carries on with it; anything else lets
 // Claude stop as usual. The app lets go of it as soon as you switch back to
 // the session's terminal, and the queue gives up after five minutes.
-let prefs = Prefs.load()
+// Every other event (twice per tool call) stops here, before any AppKit work.
+guard eventName == "Stop", event.subagentID == nil, prefs.finishedMessages else { exit(0) }
+
 let entrypoint = env["CLAUDE_CODE_ENTRYPOINT"]
 // The harness pins the front app, which is otherwise whatever is on the Mac
 // running the tests. Only honored on a harness instance.
 let frontmost = (ConfigDir.isOverridden ? env["NUDGE_TEST_FRONTMOST"] : nil)
     ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
 let atSession = frontmost.map(FrontmostApp.sessionUIBundleIDs(entrypoint: entrypoint, agent: event.agent).contains) ?? false
-guard prefs.finishedMessages,
-      shouldOfferFinishedMessage(agent: agent, eventName: eventName, entrypoint: entrypoint,
-                                 codexAncestors: agent == .codex ? ProcessTree.ancestorArguments() : [],
-                                 isSubagent: event.subagentID != nil, userIsAtSession: atSession) else {
+guard shouldOfferFinishedMessage(agent: agent, eventName: eventName, entrypoint: entrypoint,
+                                 codexAncestors: { ProcessTree.ancestorArguments() },
+                                 isSubagent: false, userIsAtSession: atSession) else {
     exit(0)
 }
 
@@ -86,8 +91,8 @@ let finished = Prompt(
     id: UUID().uuidString,
     kind: .finished,
     tool: "Stop",
-    command: finishedMessageText(string(inputJSON["last_assistant_message"]), agentName: agent.displayName),
-    cwd: event.cwd ?? FileManager.default.currentDirectoryPath,
+    command: finishedMessageText(string(inputJSON["last_assistant_message"]), agent: agent),
+    cwd: event.cwd ?? "",
     sessionId: event.claudeSessionID ?? "unknown",
     permissionMode: event.permissionMode,
     agent: event.agent,
@@ -103,9 +108,7 @@ guard let reply = try? NudgeClient.postPrompt(finished, to: "/prompt", port: por
       let text = reply.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
     exit(0)
 }
-if let data = try? JSONSerialization.data(withJSONObject: stopReplyOutput(reply: text)) {
-    FileHandle.standardOutput.write(data)
-}
+writeHookOutput(stopReplyOutput(reply: text))
 exit(0)
 
 private func string(_ value: Any?) -> String? {

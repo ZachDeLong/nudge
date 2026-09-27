@@ -172,12 +172,8 @@ struct PopoverView: View {
     @ViewBuilder
     private func finishedContent(for prompt: Prompt) -> some View {
         header(prompt: prompt, title: "\(prompt.agentName) finished")
-        AskBody(
-            question: prompt.command, notice: state.notice,
-            placeholder: "Reply to keep it going…", cancelTitle: "Dismiss",
-            messageMaxHeight: 160, focusOnAppear: false,
-            onSubmit: onSubmitText, onCancel: onCancelAsk
-        )
+        AskBody(question: prompt.command, notice: state.notice, style: .finished,
+                onSubmit: onSubmitText, onCancel: onCancelAsk)
     }
 
     // MARK: - Shared header
@@ -736,13 +732,20 @@ private struct AgentSessionsPanel: View {
 // MARK: - Ask body (text input)
 
 private struct AskBody: View {
+    /// An ask (Claude wants an answer) or a finished message (a reply keeps
+    /// it going). A finished message waits for a click before its field
+    /// takes focus; see PanelFocus.onClick.
+    enum Style {
+        case ask, finished
+        var placeholder: String { self == .ask ? "Type your answer…" : "Reply to keep it going…" }
+        var cancelTitle: String { self == .ask ? "Cancel" : "Dismiss" }
+        var messageMaxHeight: CGFloat { self == .ask ? 120 : 160 }
+        var focusOnAppear: Bool { self == .ask }
+    }
+
     let question: String
     let notice: DecisionNotice?
-    var placeholder: String = "Type your answer…"
-    var cancelTitle: String = "Cancel"
-    var messageMaxHeight: CGFloat = 120
-    /// Asks focus their field at once; a finished message waits for a click.
-    var focusOnAppear: Bool = true
+    var style: Style = .ask
     let onSubmit: (String) -> Void
     let onCancel: () -> Void
     @State private var text: String = ""
@@ -762,7 +765,7 @@ private struct AskBody: View {
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .textSelection(.enabled)
             }
-            .frame(maxHeight: messageMaxHeight)
+            .frame(maxHeight: style.messageMaxHeight)
             .background(Color.primary.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
@@ -771,7 +774,7 @@ private struct AskBody: View {
             // misaligns with placeholder). Enter sends; Shift+Enter breaks the
             // line, matching the chat composer below the fold.
             VStack(alignment: .trailing, spacing: 5) {
-                TextField(placeholder, text: $text, axis: .vertical)
+                TextField(style.placeholder, text: $text, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .lineLimit(3...8)
@@ -799,7 +802,7 @@ private struct AskBody: View {
                 } else {
                     HStack(spacing: 8) {
                         Button(action: onCancel) {
-                            ButtonLabel(title: cancelTitle, key: "esc")
+                            ButtonLabel(title: style.cancelTitle, key: "esc")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
@@ -817,7 +820,7 @@ private struct AskBody: View {
                 }
             }
         }
-        .onAppear { if focusOnAppear { focused = true } }
+        .onAppear { if style.focusOnAppear { focused = true } }
     }
 
     private func submit() {

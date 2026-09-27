@@ -9,9 +9,7 @@ import NudgeHookCore
 func exitWithConfigDirWarning(_ problem: String) -> Never {
     let message = "Nudge is off for this session: NUDGE_CONFIG_DIR is set to \(ConfigDir.url.path), \(problem). "
         + "It's only for Nudge's test harness; unset it to get Nudge prompts back."
-    if let data = try? JSONSerialization.data(withJSONObject: ["systemMessage": message]) {
-        FileHandle.standardOutput.write(data)
-    }
+    writeHookOutput(["systemMessage": message])
     exit(0)
 }
 
@@ -53,16 +51,17 @@ guard nudgeAsks(event: event, permissionMode: permissionMode) else { exit(0) }
 // MARK: - Skip when user is already at a terminal/IDE
 
 // The agent's own app counts too: if you're looking at Codex in ChatGPT, or at
-// a session in the Claude app, its approval prompt is right there.
-let atAgentUI: Bool = {
+// a session in the Claude app, its approval prompt is right there. Asked only
+// where it matters: most PreToolUse calls match no pattern and never need it.
+func userIsAtAgentUI() -> Bool {
     guard settings.skipWhenTerminalFocused,
           let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return false }
-    return FrontmostApp.terminalBundleIDs.contains(frontmost)
-        || agent.hostAppBundleIDs(environment: ProcessInfo.processInfo.environment).contains(frontmost)
-}()
+    let entrypoint = ProcessInfo.processInfo.environment["CLAUDE_CODE_ENTRYPOINT"]
+    return FrontmostApp.sessionUIBundleIDs(entrypoint: entrypoint, agent: agent.rawValue).contains(frontmost)
+}
 
 // The agent is showing its own prompt: leave it to that.
-if atAgentUI, event == .permissionRequest { exit(0) }
+if event == .permissionRequest, userIsAtAgentUI() { exit(0) }
 
 // MARK: - Decide whether to ask
 
@@ -97,10 +96,8 @@ case .preToolUse:
     // You're at the agent's UI, so it asks there. Claude wouldn't have asked
     // on its own (that's what the pattern is for), so say "ask" rather than
     // nothing.
-    if atAgentUI {
-        if let data = try? JSONSerialization.data(withJSONObject: askInAgentUIOutput(pattern: pattern)) {
-            FileHandle.standardOutput.write(data)
-        }
+    if userIsAtAgentUI() {
+        writeHookOutput(askInAgentUIOutput(pattern: pattern))
         exit(0)
     }
     matched = pattern
@@ -153,10 +150,7 @@ do {
     // Exiting closes the socket, which withdraws the prompt in the menu bar.
     // With no decision, the agent's own prompt takes over (a denial would
     // stop the call), and systemMessage tells you why it took a while.
-    let message = handBackMessage(agent: agent, waited: maxWait!)
-    if let data = try? JSONSerialization.data(withJSONObject: ["systemMessage": message]) {
-        FileHandle.standardOutput.write(data)
-    }
+    writeHookOutput(["systemMessage": handBackMessage(agent: agent, waited: maxWait!)])
     exit(0)
 } catch NudgeClientError.unauthorized {
     // Token mismatch — surface to stderr so it shows up in Console.app and
@@ -177,8 +171,5 @@ guard decision.decision == .allow || decision.decision == .deny else {
 
 // MARK: - Answer the agent
 
-let response = hookDecisionOutput(event: event, allow: decision.decision == .allow)
-if let outputData = try? JSONSerialization.data(withJSONObject: response) {
-    FileHandle.standardOutput.write(outputData)
-}
+writeHookOutput(hookDecisionOutput(event: event, allow: decision.decision == .allow))
 exit(0)

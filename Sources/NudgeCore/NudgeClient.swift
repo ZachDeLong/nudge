@@ -22,7 +22,7 @@ public enum NudgeClient {
         // Still connect to a running Nudge above; only the resurrection below
         // is gated. If the user quit deliberately, leave it quit.
         guard !AutoLaunch.isSuppressed(at: autoLaunchMarkerURL) else { return nil }
-        // `open -ga Nudge` starts the installed app on ~/.config/nudge, not the
+        // Launching starts the installed app on ~/.config/nudge, not the
         // instance an overridden config dir belongs to, so waiting on it would
         // just burn the timeout (and wake the user's real Nudge).
         guard !ConfigDir.isOverridden else { return nil }

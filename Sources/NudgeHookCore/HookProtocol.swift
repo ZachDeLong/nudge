@@ -24,21 +24,6 @@ public enum HookAgent: String, Sendable {
         return agent
     }
 
-    /// Bundle IDs of the app showing this session's own approval prompt. When
-    /// it's in front, the prompt is already on screen, so Nudge stays out of
-    /// the way the same way it does for terminals.
-    public func hostAppBundleIDs(environment: [String: String]) -> Set<String> {
-        switch self {
-        // Claude Code in a terminal is covered by the terminal list. The
-        // Claude app only counts for sessions running in it: a terminal
-        // session's prompt isn't on screen just because the app is in front.
-        case .claude:
-            return environment["CLAUDE_CODE_ENTRYPOINT"] == "claude-desktop"
-                ? ["com.anthropic.claudefordesktop"] : []
-        case .codex:
-            return ["com.openai.codex", "com.openai.chat"]
-        }
-    }
 
     /// How long the hook holds the agent before handing the request back.
     ///
@@ -127,14 +112,15 @@ public let interactiveEntrypoints: Set<String> = ["cli", "claude-desktop", "clau
 /// Whether a Stop should become a "finished" message: a session a person is
 /// driving, the main thread, and you're not looking at the session already.
 /// Claude says how it was started (`entrypoint`); Codex doesn't, so its hook's
-/// ancestors (`codexAncestors`, nearest first) tell a `codex exec` run apart.
+/// ancestors (nearest first) tell a `codex exec` run apart. They're read only
+/// when it comes to that, since walking the process tree costs sysctls.
 public func shouldOfferFinishedMessage(agent: HookAgent, eventName: String, entrypoint: String?,
-                                       codexAncestors: [[String]] = [],
+                                       codexAncestors: () -> [[String]] = { [] },
                                        isSubagent: Bool, userIsAtSession: Bool) -> Bool {
     guard eventName == "Stop", !isSubagent, !userIsAtSession else { return false }
     switch agent {
     case .claude: return interactiveEntrypoints.contains(entrypoint ?? "")
-    case .codex:  return !codexRunIsScripted(ancestorArguments: codexAncestors)
+    case .codex:  return !codexRunIsScripted(ancestorArguments: codexAncestors())
     }
 }
 
@@ -150,10 +136,10 @@ public func codexRunIsScripted(ancestorArguments: [[String]]) -> Bool {
     return args.contains("exec") || args.contains("e")
 }
 
-/// What the popover shows: Claude's last message, trimmed and capped.
-public func finishedMessageText(_ lastAssistantMessage: String?, agentName: String = "Claude") -> String {
+/// What the popover shows: the agent's last message, trimmed and capped.
+public func finishedMessageText(_ lastAssistantMessage: String?, agent: HookAgent) -> String {
     let text = (lastAssistantMessage ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { return "\(agentName) finished its turn." }
+    guard !text.isEmpty else { return "\(agent.displayName) finished its turn." }
     return text.count > 4000 ? String(text.prefix(4000)) + "…" : text
 }
 
@@ -175,6 +161,14 @@ public func askInAgentUIOutput(pattern: String) -> [String: Any] {
             "permissionDecisionReason": "Nudge: this matches \(pattern).",
         ]
     ]
+}
+
+/// Prints a hook answer (a decision, a systemMessage) to stdout, where the
+/// agent reads it.
+public func writeHookOutput(_ object: [String: Any]) {
+    if let data = try? JSONSerialization.data(withJSONObject: object) {
+        FileHandle.standardOutput.write(data)
+    }
 }
 
 /// The JSON the hook prints to answer. Claude Code and Codex read the same

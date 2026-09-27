@@ -23,7 +23,8 @@ set -euo pipefail
 CODEX_DIR="${CODEX_HOME:-$HOME/.codex}"
 HOOKS="$CODEX_DIR/hooks.json"
 BIN_DIR="/Applications/Nudge.app/Contents/MacOS"
-# The CLI the ChatGPT app ships (it moved into codex-cli/bin in 26.9).
+# The CLI the ChatGPT app ships (it moved into codex-cli/bin in 26.9). Same
+# lookup as Sources/E2ETestRunner/CodexSuite.swift; change both together.
 CODEX_CLI="/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex"
 [[ -x "$CODEX_CLI" ]] || CODEX_CLI="/Applications/ChatGPT.app/Contents/Resources/codex"
 

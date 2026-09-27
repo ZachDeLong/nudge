@@ -32,6 +32,30 @@ final class PromptQueueTests: XCTestCase {
         XCTAssertEqual(r2.decision, .deny)
     }
 
+    /// Letting go of finished messages in bulk reaches one queued behind a
+    /// permission prompt, and leaves the permission prompt alone.
+    func testResolveAllAnswersMatchesBehindTheHead() async throws {
+        let queue = PromptQueue()
+        let permission = Prompt(id: "p", tool: "Bash", command: "a", cwd: "/", sessionId: "s")
+        let finished = Prompt(id: "f", kind: .finished, tool: "Stop", command: "done", cwd: "/", sessionId: "s")
+
+        let tp = Task { try await queue.enqueue(permission) }
+        try await Task.sleep(nanoseconds: 20_000_000)
+        let tf = Task { try await queue.enqueue(finished) }
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        let count = await queue.resolveAll(where: { $0.resolvedKind == .finished },
+                                           with: DecisionResponse(decision: .cancel))
+        XCTAssertEqual(count, 1)
+        let rf = try await tf.value
+        XCTAssertEqual(rf.decision, .cancel)
+        let left = await queue.snapshot().map(\.id)
+        XCTAssertEqual(left, ["p"])
+
+        await queue.resolve(id: "p", with: .deny)
+        _ = try await tp.value
+    }
+
     func testEnqueueWithTimeoutFires() async throws {
         let queue = PromptQueue()
         let prompt = Prompt(id: "to", tool: "Bash", command: "x", cwd: "/", sessionId: "s")

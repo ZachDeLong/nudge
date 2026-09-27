@@ -3,6 +3,8 @@
 CONFIG ?= release
 BUILD_DIR := .build/$(CONFIG)
 APP_DEST := /Applications/Nudge.app
+# Quit Nudge by path, never by name: another app can be called Nudge.
+KILL_APP = pkill -f '^$(APP_DEST)/Contents/MacOS/Nudge' 2>/dev/null || true
 PATTERNS_FILE := $(HOME)/.config/nudge/patterns.txt
 
 build:
@@ -24,7 +26,7 @@ install: build
 	@echo "→ Building app bundle…"
 	./scripts/build-app.sh $(BUILD_DIR)
 	@echo "→ Copying to /Applications…"
-	-pkill -f '^$(APP_DEST)/Contents/MacOS/Nudge' 2>/dev/null || true
+	-$(KILL_APP)
 	rm -rf $(APP_DEST)
 	cp -R $(BUILD_DIR)/Nudge.app $(APP_DEST)
 	xattr -dr com.apple.quarantine $(APP_DEST) 2>/dev/null || true
@@ -128,7 +130,7 @@ icon:
 	swift scripts/render-icon.swift
 
 uninstall:
-	-pkill -f '^$(APP_DEST)/Contents/MacOS/Nudge' 2>/dev/null || true
+	-$(KILL_APP)
 	rm -rf $(APP_DEST)
 	rm -f $(HOME)/.config/nudge/port $(HOME)/.config/nudge/token $(HOME)/.config/nudge/no-autolaunch
 	@./scripts/link-cli.sh --uninstall
