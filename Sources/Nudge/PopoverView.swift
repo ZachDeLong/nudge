@@ -358,6 +358,11 @@ enum PromptCopy {
     }
 
     static func projectName(_ prompt: Prompt) -> String {
+        // A Claude app session started without a folder runs in a scratch
+        // workspace whose name (scratch-2026-09-27-8f26a3) means nothing.
+        if prompt.cwd.contains("/Library/Application Support/Claude/scratch-workspaces/") {
+            return "Claude app"
+        }
         let name = URL(fileURLWithPath: prompt.cwd).lastPathComponent
         return name.isEmpty ? prompt.cwd : name
     }

@@ -77,8 +77,9 @@ public enum FrontmostApp {
     ]
 
     /// Apps where ⏎ and esc belong to an agent's own prompt: the terminals
-    /// and IDEs above, plus Codex's desktop apps (HookAgent.hostAppBundleIDs).
-    /// Nudge's global keys stand down while one is in front.
+    /// and IDEs above, Codex's desktop apps, and the Claude app (its prompt
+    /// card answers to esc, and ⏎ sends a message). Nudge's global keys stand
+    /// down while one is in front.
     public static let ownPromptBundleIDs: Set<String> =
-        terminalBundleIDs.union(["com.openai.codex", "com.openai.chat"])
+        terminalBundleIDs.union(["com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop"])
 }

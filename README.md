@@ -8,6 +8,8 @@ Nudge asks exactly when Claude Code would ask. If an allow rule or auto mode alr
 
 It's a quality-of-life tool, not a security tool. The terminal still works: answer there and Nudge's copy goes away.
 
+It works the same for sessions in the Claude app's Code tab, since those run your `~/.claude` hooks too. The app sandboxes most shell commands, so Claude asks less often there.
+
 ![Nudge asking to allow a git push, under its menu bar icon](./docs/img/hero.png)
 
 ## What's in the box
@@ -89,7 +91,8 @@ Click the menu bar icon when there's no prompt up, or right-click it to get the 
 
 A few things the panel doesn't tell you:
 
-- **⏎ / esc from any app** needs Accessibility access: System Settings → Privacy & Security → Accessibility, which macOS 27 renamed Device Control and Data Access. The Enable… button in the panel opens it. Since 1.4.2 macOS keeps that grant across updates. Coming from an older version, remove Nudge from the list and add it back once. Keys are ignored for the first 0.6s a prompt is up, and until you've stopped typing elsewhere for a second, so the Enter at the end of a paragraph doesn't approve anything. They also do nothing while a terminal, an IDE or the ChatGPT app is in front, where they belong to the agent's own dialog. If you'd rather only click, switch off "Answer with ⏎ and esc".
+- **⏎ / esc from any app** needs Accessibility access: System Settings → Privacy & Security → Accessibility, which macOS 27 renamed Device Control and Data Access. The Enable… button in the panel opens it. Since 1.4.2 macOS keeps that grant across updates. Coming from an older version, remove Nudge from the list and add it back once. Keys are ignored for the first 0.6s a prompt is up, and until you've stopped typing elsewhere for a second, so the Enter at the end of a paragraph doesn't approve anything. They also do nothing while a terminal, an IDE, the Claude app or the ChatGPT app is in front, where they belong to the agent's own dialog. If you'd rather only click, switch off "Answer with ⏎ and esc".
+- **Skip when terminal is focused** also covers the Claude app, for sessions running in it. If a pattern matches while you're there, Claude asks in its own prompt instead, so the command doesn't run unasked.
 - **Quit means quit.** The hooks won't relaunch Nudge until you open it yourself. If it crashes, it comes back on the next hook call.
 
 ## nudge-ask

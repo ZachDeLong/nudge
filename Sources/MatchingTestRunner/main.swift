@@ -638,8 +638,16 @@ expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "codex"]), .codex, "p
 expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "Codex"]), .codex, "protocol: agent flag ignores case")
 expect(HookAgent.from(arguments: ["nudge-hook", "--agent"]), .claude, "protocol: dangling flag falls back to Claude")
 expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "cursor"]), .claude, "protocol: unknown agent falls back to Claude")
-expect(HookAgent.codex.hostAppBundleIDs.contains("com.openai.codex"), true, "protocol: ChatGPT/Codex app counts as the agent's own UI")
-expect(HookAgent.claude.hostAppBundleIDs.isEmpty, true, "protocol: for Claude Code only the terminal list counts as its own UI")
+expect(HookAgent.codex.hostAppBundleIDs(environment: [:]).contains("com.openai.codex"), true, "protocol: ChatGPT/Codex app counts as the agent's own UI")
+expect(HookAgent.claude.hostAppBundleIDs(environment: [:]).isEmpty, true, "protocol: for a terminal Claude session only the terminal list counts as its own UI")
+expect(HookAgent.claude.hostAppBundleIDs(environment: ["CLAUDE_CODE_ENTRYPOINT": "cli"]).isEmpty, true, "protocol: CLI entrypoint doesn't count the Claude app")
+expect(HookAgent.claude.hostAppBundleIDs(environment: ["CLAUDE_CODE_ENTRYPOINT": "claude-desktop"]), ["com.anthropic.claudefordesktop"], "protocol: a Claude app session counts the Claude app as its own UI")
+do {
+    let out = askInAgentUIOutput(pattern: "Bash(git push:*)")["hookSpecificOutput"] as? [String: String]
+    expect(out?["hookEventName"], "PreToolUse", "protocol: hand-back answers PreToolUse")
+    expect(out?["permissionDecision"], "ask", "protocol: a pattern match at the agent's UI asks there instead of running unasked")
+    expect(out?["permissionDecisionReason"], "Nudge: this matches Bash(git push:*).", "protocol: hand-back names the pattern")
+}
 
 // Wait bound: Codex shows no prompt of its own while the hook waits, so the
 // hook gives up after two minutes. Claude's dialog runs alongside, so no bound.

@@ -52,13 +52,17 @@ guard nudgeAsks(event: event, permissionMode: permissionMode) else { exit(0) }
 
 // MARK: - Skip when user is already at a terminal/IDE
 
-// The agent's own app counts too: if you're looking at Codex in ChatGPT, its
-// approval prompt is right there.
-if settings.skipWhenTerminalFocused,
-   let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-   FrontmostApp.terminalBundleIDs.contains(frontmost) || agent.hostAppBundleIDs.contains(frontmost) {
-    exit(0)
-}
+// The agent's own app counts too: if you're looking at Codex in ChatGPT, or at
+// a session in the Claude app, its approval prompt is right there.
+let atAgentUI: Bool = {
+    guard settings.skipWhenTerminalFocused,
+          let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return false }
+    return FrontmostApp.terminalBundleIDs.contains(frontmost)
+        || agent.hostAppBundleIDs(environment: ProcessInfo.processInfo.environment).contains(frontmost)
+}()
+
+// The agent is showing its own prompt: leave it to that.
+if atAgentUI, event == .permissionRequest { exit(0) }
 
 // MARK: - Decide whether to ask
 
@@ -88,6 +92,15 @@ case .preToolUse:
     case .unknown: exit(0)
     }
     guard let pattern = matchedPattern(toolName: toolName, target: target, patterns: loadPatterns()) else {
+        exit(0)
+    }
+    // You're at the agent's UI, so it asks there. Claude wouldn't have asked
+    // on its own (that's what the pattern is for), so say "ask" rather than
+    // nothing.
+    if atAgentUI {
+        if let data = try? JSONSerialization.data(withJSONObject: askInAgentUIOutput(pattern: pattern)) {
+            FileHandle.standardOutput.write(data)
+        }
         exit(0)
     }
     matched = pattern

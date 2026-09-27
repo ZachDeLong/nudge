@@ -24,16 +24,19 @@ public enum HookAgent: String, Sendable {
         return agent
     }
 
-    /// Bundle IDs of the agent's own desktop app. When it's in front, its own
-    /// approval prompt is already on screen, so Nudge stays out of the way the
-    /// same way it does for terminals.
-    public var hostAppBundleIDs: Set<String> {
+    /// Bundle IDs of the app showing this session's own approval prompt. When
+    /// it's in front, the prompt is already on screen, so Nudge stays out of
+    /// the way the same way it does for terminals.
+    public func hostAppBundleIDs(environment: [String: String]) -> Set<String> {
         switch self {
         // Claude Code in a terminal is covered by the terminal list. The
-        // desktop app being in front doesn't mean the prompt asking is on
-        // screen: it may come from a terminal session.
-        case .claude: return []
-        case .codex:  return ["com.openai.codex", "com.openai.chat"]
+        // Claude app only counts for sessions running in it: a terminal
+        // session's prompt isn't on screen just because the app is in front.
+        case .claude:
+            return environment["CLAUDE_CODE_ENTRYPOINT"] == "claude-desktop"
+                ? ["com.anthropic.claudefordesktop"] : []
+        case .codex:
+            return ["com.openai.codex", "com.openai.chat"]
         }
     }
 
@@ -113,6 +116,19 @@ public func nudgeAsks(event: HookEvent, permissionMode: String) -> Bool {
 /// Answering them with a bare Allow would pick one silently, so they stay in
 /// the agent's own UI.
 public let toolsLeftToAgentUI: Set<String> = ["ExitPlanMode", "AskUserQuestion"]
+
+/// A pattern matched while you're looking at the agent's own UI: have Claude
+/// ask there instead of Nudge. Staying silent would let the call run unasked,
+/// which is the opposite of what a pattern is for.
+public func askInAgentUIOutput(pattern: String) -> [String: Any] {
+    [
+        "hookSpecificOutput": [
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": "Nudge: this matches \(pattern).",
+        ]
+    ]
+}
 
 /// The JSON the hook prints to answer. Claude Code and Codex read the same
 /// shape for each event.
