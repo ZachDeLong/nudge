@@ -1,5 +1,6 @@
 import Foundation
 import NudgeCore
+import NudgeHookCore
 
 // Master switch, same as nudge-hook. The activity side channel is still Nudge,
 // so a paused Nudge shouldn't keep collecting. Checked before reading stdin to
@@ -17,6 +18,9 @@ guard let inputJSON = try? JSONSerialization.jsonObject(with: inputData) as? [St
 }
 
 let env = ProcessInfo.processInfo.environment
+// Codex's hook entry passes `--agent codex`. Its only event here is Interrupt,
+// which tells the app to drop a prompt Codex stopped waiting on.
+let agent = HookAgent.from(arguments: CommandLine.arguments)
 let eventName = string(inputJSON["hook_event_name"]) ?? "Unknown"
 let toolInput = inputJSON["tool_input"] as? [String: Any]
 
@@ -42,7 +46,8 @@ let event = AgentHookEvent(
     message: string(inputJSON["message"]),
     error: string(inputJSON["error"]) ?? string(inputJSON["error_details"]),
     callKey: callKey,
-    subagentID: string(inputJSON["agent_id"])
+    subagentID: string(inputJSON["agent_id"]),
+    agent: agent == .claude ? nil : agent.rawValue
 )
 
 guard let port = NudgeClient.locatePort() else {

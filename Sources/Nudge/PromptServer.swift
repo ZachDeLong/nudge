@@ -236,7 +236,11 @@ actor PromptServer {
 
         do {
             let event = try JSONDecoder().decode(AgentHookEvent.self, from: Data(req.body))
-            await activityStore.record(event)
+            // The activity store mirrors nudge-claude sessions; Codex's
+            // events are only here to withdraw prompts.
+            if event.agent != "codex" {
+                await activityStore.record(event)
+            }
             // Before answering: Claude waits for this hook, so a later prompt
             // can't be swept by an event that arrives late.
             await withdrawAnsweredElsewhere(event)
@@ -260,6 +264,9 @@ actor PromptServer {
     ///   waiting. Subagent prompts are left alone; a background subagent can
     ///   outlive the turn.
     /// - SessionEnd: nothing in the session is waiting.
+    /// - Interrupt (Codex): you stopped the turn. Codex ignores the hook from
+    ///   then on but leaves it running (0.155), so without this the prompt
+    ///   stays up answering nothing, ahead of whatever Codex asks next.
     private func withdrawAnsweredElsewhere(_ event: AgentHookEvent) async {
         guard let session = event.claudeSessionID else { return }
         switch event.eventName {
@@ -269,7 +276,7 @@ actor PromptServer {
         case "Stop", "StopFailure":
             guard event.subagentID == nil else { return }
             await queue.withdraw { $0.isPermissionRequest && $0.sessionId == session && $0.subagentId == nil }
-        case "SessionEnd":
+        case "SessionEnd", "Interrupt":
             await queue.withdraw { $0.isPermissionRequest && $0.sessionId == session }
         default:
             return

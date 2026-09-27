@@ -35,7 +35,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "NudgeAgentHook",
-            dependencies: ["NudgeCore"],
+            dependencies: ["NudgeCore", "NudgeHookCore"],
             path: "Sources/NudgeAgentHook"
         ),
         .executableTarget(

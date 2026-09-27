@@ -30,6 +30,8 @@ public struct AgentHookEvent: Codable, Equatable, Sendable {
     public let callKey: String?
     /// Claude Code's `agent_id` when the event came from a subagent.
     public let subagentID: String?
+    /// "codex" for Codex's events; nil (Claude Code) from older hooks.
+    public let agent: String?
 
     public init(
         id: String = UUID().uuidString,
@@ -46,10 +48,12 @@ public struct AgentHookEvent: Codable, Equatable, Sendable {
         message: String?,
         error: String?,
         callKey: String? = nil,
-        subagentID: String? = nil
+        subagentID: String? = nil,
+        agent: String? = nil
     ) {
         self.callKey = callKey
         self.subagentID = subagentID
+        self.agent = agent
         self.id = id
         self.occurredAt = occurredAt
         self.nudgeSessionID = nudgeSessionID

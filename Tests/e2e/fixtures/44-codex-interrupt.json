@@ -1,0 +1,50 @@
+{
+  "description": "Stopping a Codex turn leaves its PermissionRequest hook running; Codex's Interrupt event withdraws the prompt",
+  "patterns": [],
+  "args": [
+    "--agent",
+    "codex"
+  ],
+  "payload": {
+    "session_id": "01a0e077-a652-7db0-a373-2832df895844",
+    "turn_id": "01a0e077-a66b-7f73-86ec-073a3d020b44",
+    "transcript_path": null,
+    "cwd": "/Users/dev/code/api",
+    "hook_event_name": "PermissionRequest",
+    "model": "gpt-6-luna",
+    "permission_mode": "default",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "touch made-by-codex.txt"
+    }
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "01a0e077-a652-7db0-a373-2832df895844",
+    "permissionMode": "default",
+    "command": "touch made-by-codex.txt",
+    "matchedPattern": null,
+    "event": "PermissionRequest",
+    "detail": null,
+    "agent": "codex",
+    "subagentId": null
+  },
+  "respond": "agent-event",
+  "agentArgs": [
+    "--agent",
+    "codex"
+  ],
+  "agentEvent": {
+    "session_id": "01a0e077-a652-7db0-a373-2832df895844",
+    "turn_id": "01a0e077-a66b-7f73-86ec-073a3d020b44",
+    "transcript_path": null,
+    "cwd": "/Users/dev/code/api",
+    "hook_event_name": "Interrupt",
+    "model": "gpt-6-luna",
+    "permission_mode": "default"
+  },
+  "expectStdout": null,
+  "expectExit": 0
+}
