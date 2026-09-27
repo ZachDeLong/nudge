@@ -87,7 +87,7 @@ Click the menu bar icon when there's no prompt up, or right-click it to get the 
 
 A few things the panel doesn't tell you:
 
-- **⏎ / esc from any app** needs Accessibility access: System Settings → Privacy & Security → Accessibility, which macOS 27 renamed Device Control and Data Access. The Enable… button in the panel opens it. Since 1.4.2 macOS keeps that grant across updates. Coming from an older version, remove Nudge from the list and add it back once. Keys are ignored for the first 0.6s a prompt is up, and until you've stopped typing elsewhere for a second, so the Enter at the end of a paragraph doesn't approve anything. If you'd rather only click, switch off "Answer with ⏎ and esc".
+- **⏎ / esc from any app** needs Accessibility access: System Settings → Privacy & Security → Accessibility, which macOS 27 renamed Device Control and Data Access. The Enable… button in the panel opens it. Since 1.4.2 macOS keeps that grant across updates. Coming from an older version, remove Nudge from the list and add it back once. Keys are ignored for the first 0.6s a prompt is up, and until you've stopped typing elsewhere for a second, so the Enter at the end of a paragraph doesn't approve anything. They also do nothing while a terminal, an IDE or the ChatGPT app is in front, where they belong to the agent's own dialog. If you'd rather only click, switch off "Answer with ⏎ and esc".
 - **Quit means quit.** The hooks won't relaunch Nudge until you open it yourself. If it crashes, it comes back on the next hook call.
 
 ## nudge-ask

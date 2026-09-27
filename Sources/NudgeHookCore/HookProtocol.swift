@@ -146,8 +146,10 @@ public func hookDecisionOutput(event: HookEvent, allow: Bool) -> [String: Any] {
 }
 
 /// What the popover shows for a tool call: the shell command, file path,
-/// patch, URL or tool name. Anything unrecognized falls back to its input as
-/// compact JSON, so an unfamiliar tool is never approved blind.
+/// patch or URL. An MCP tool shows its name and then its arguments, since
+/// that's where the call's meaning is (an SQL statement, a message body).
+/// Anything unrecognized falls back to its input as compact JSON, so an
+/// unfamiliar tool is never approved blind.
 public func displayTarget(toolName: String, input: [String: Any]) -> String {
     switch toolName {
     case "Bash":
@@ -164,16 +166,29 @@ public func displayTarget(toolName: String, input: [String: Any]) -> String {
     case "WebSearch":
         return input["query"] as? String ?? ""
     default:
-        if toolName.hasPrefix(mcpToolPrefix) { return toolName }
+        if toolName.hasPrefix(mcpToolPrefix) {
+            // Every argument, `description` included: for an MCP tool it's
+            // data (an issue's body), not the agent explaining itself.
+            guard let args = jsonText(input, pretty: true) else { return toolName }
+            return toolName + "\n" + args
+        }
         var rest = input
         rest.removeValue(forKey: "description")
-        guard !rest.isEmpty,
-              let data = try? JSONSerialization.data(withJSONObject: rest, options: [.sortedKeys]),
-              let json = String(data: data, encoding: .utf8) else {
-            return ""
-        }
-        return json.count > 2000 ? String(json.prefix(2000)) + "…" : json
+        return jsonText(rest, pretty: false) ?? ""
     }
+}
+
+/// `object` as JSON with sorted keys, capped at 2000 characters. Nil when
+/// it's empty.
+private func jsonText(_ object: [String: Any], pretty: Bool) -> String? {
+    var options: JSONSerialization.WritingOptions = [.sortedKeys, .withoutEscapingSlashes]
+    if pretty { options.insert(.prettyPrinted) }
+    guard !object.isEmpty,
+          let data = try? JSONSerialization.data(withJSONObject: object, options: options),
+          let json = String(data: data, encoding: .utf8) else {
+        return nil
+    }
+    return json.count > 2000 ? String(json.prefix(2000)) + "…" : json
 }
 
 /// The files a Codex `apply_patch` touches, in patch order. Reads the

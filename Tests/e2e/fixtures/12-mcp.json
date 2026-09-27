@@ -1,5 +1,5 @@
 {
-  "description": "MCP tool matched by server glob; the popover shows the full mcp__ name",
+  "description": "MCP tool matched by server glob; the popover shows the full mcp__ name and its arguments",
   "patterns": [
     "Mcp(playwright__*)"
   ],
@@ -21,7 +21,7 @@
     "cwd": "/Users/dev/code/api",
     "sessionId": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
     "permissionMode": "default",
-    "command": "mcp__playwright__browser_navigate",
+    "command": "mcp__playwright__browser_navigate\n{\n  \"url\" : \"https://example.com/login\"\n}",
     "matchedPattern": "Mcp(playwright__*)"
   },
   "respond": "deny",

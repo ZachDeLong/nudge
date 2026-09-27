@@ -91,7 +91,7 @@ case .preToolUse:
         exit(0)
     }
     matched = pattern
-    displayCommand = family(for: toolName) == .mcp ? toolName : target
+    displayCommand = family(for: toolName) == .mcp ? displayTarget(toolName: toolName, input: toolInput) : target
 
 case .permissionRequest:
     // The agent was about to show its own approval prompt. Answer every one

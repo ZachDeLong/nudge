@@ -683,7 +683,12 @@ expect(
     "display: Codex apply_patch shows the patch"
 )
 expect(displayTarget(toolName: "WebFetch", input: ["url": "https://example.com", "prompt": "x"]), "https://example.com", "display: WebFetch shows the URL")
-expect(displayTarget(toolName: "mcp__github__create_issue", input: ["title": "x"]), "mcp__github__create_issue", "display: MCP shows the tool name")
+expect(displayTarget(toolName: "mcp__github__create_issue", input: ["title": "x", "description": "why"]),
+       "mcp__github__create_issue\n{\n  \"description\" : \"why\",\n  \"title\" : \"x\"\n}",
+       "display: MCP shows the tool name, then every argument")
+expect(displayTarget(toolName: "mcp__supabase__execute_sql", input: ["query": "select 1"]).hasSuffix("\"query\" : \"select 1\"\n}"), true,
+       "display: MCP SQL is visible")
+expect(displayTarget(toolName: "mcp__github__list_issues", input: [:]), "mcp__github__list_issues", "display: MCP with no arguments shows the name")
 expect(
     displayTarget(toolName: "SomethingNew", input: ["b": 2, "a": "x", "description": "why"]),
     #"{"a":"x","b":2}"#,
