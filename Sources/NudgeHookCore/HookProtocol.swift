@@ -36,6 +36,44 @@ public enum HookAgent: String, Sendable {
         case .codex:  return ["com.openai.codex", "com.openai.chat"]
         }
     }
+
+    /// How long the hook holds the agent before handing the request back.
+    ///
+    /// Claude Code shows its own dialog while the hook runs, so a prompt left
+    /// in Nudge blocks nothing: no bound here, and the app's 5-minute timeout
+    /// applies. Codex shows nothing until the hook returns (0.155), so a
+    /// prompt forgotten in the menu bar would hold Codex for the full
+    /// 5 minutes. After two, Nudge gives up and Codex asks in its own UI.
+    public var maxWait: TimeInterval? {
+        switch self {
+        case .claude: return nil
+        case .codex:  return 120
+        }
+    }
+}
+
+/// Seconds the hook waits for an answer before giving up, or nil to wait for
+/// the app. The e2e harness shortens it with `NUDGE_HOOK_MAX_WAIT`, honored
+/// only when the hook runs against a harness config dir (`harness`), so a
+/// stray variable can't change a real install.
+public func hookMaxWait(agent: HookAgent, environment: [String: String], harness: Bool) -> TimeInterval? {
+    if harness, let raw = environment["NUDGE_HOOK_MAX_WAIT"], let seconds = TimeInterval(raw), seconds > 0 {
+        return seconds
+    }
+    return agent.maxWait
+}
+
+/// What the hook tells the user, through the agent, when it gives up waiting
+/// and the agent's own prompt takes over.
+public func handBackMessage(agent: HookAgent, waited seconds: TimeInterval) -> String {
+    let whole = Int(seconds.rounded())
+    let duration: String
+    if whole >= 60, whole % 60 == 0 {
+        duration = whole == 60 ? "a minute" : "\(whole / 60) minutes"
+    } else {
+        duration = whole == 1 ? "1 second" : "\(whole) seconds"
+    }
+    return "Nudge got no answer in \(duration), so \(agent.displayName) is asking here instead."
 }
 
 /// The hook events Nudge answers.

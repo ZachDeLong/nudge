@@ -1,0 +1,43 @@
+{
+  "description": "Codex shows no prompt while the hook waits, so an unanswered prompt is handed back (no decision, so Codex asks itself) and leaves the menu bar",
+  "patterns": [],
+  "args": [
+    "--agent",
+    "codex"
+  ],
+  "env": {
+    "NUDGE_HOOK_MAX_WAIT": "1"
+  },
+  "payload": {
+    "session_id": "01a0e077-a652-7db0-a373-2832df895846",
+    "turn_id": "01a0e077-a66b-7f73-86ec-073a3d020b46",
+    "transcript_path": null,
+    "cwd": "/Users/dev/code/api",
+    "hook_event_name": "PermissionRequest",
+    "model": "gpt-6-luna",
+    "permission_mode": "default",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "touch made-by-codex.txt"
+    }
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "01a0e077-a652-7db0-a373-2832df895846",
+    "permissionMode": "default",
+    "command": "touch made-by-codex.txt",
+    "matchedPattern": null,
+    "event": "PermissionRequest",
+    "detail": null,
+    "agent": "codex",
+    "subagentId": null
+  },
+  "respond": "wait",
+  "waitSeconds": 8,
+  "expectStdout": {
+    "systemMessage": "Nudge got no answer in 1 second, so Codex is asking here instead."
+  },
+  "expectExit": 0
+}

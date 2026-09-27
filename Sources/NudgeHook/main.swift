@@ -129,9 +129,22 @@ guard let port = NudgeClient.locatePort() else {
 // If the agent dies while we wait, stop holding the prompt open.
 CallerWatch.exitWhenCallerGone()
 
+// Codex asks nothing of its own while we wait, so don't hold it forever.
+let maxWait = hookMaxWait(agent: agent, environment: ProcessInfo.processInfo.environment,
+                          harness: ConfigDir.isOverridden)
+
 let decision: DecisionResponse
 do {
-    decision = try NudgeClient.postPrompt(prompt, to: "/prompt", port: port)
+    decision = try NudgeClient.postPrompt(prompt, to: "/prompt", port: port, waitAtMost: maxWait)
+} catch NudgeClientError.requestTimedOut where maxWait != nil {
+    // Exiting closes the socket, which withdraws the prompt in the menu bar.
+    // With no decision, the agent's own prompt takes over (a denial would
+    // stop the call), and systemMessage tells you why it took a while.
+    let message = handBackMessage(agent: agent, waited: maxWait!)
+    if let data = try? JSONSerialization.data(withJSONObject: ["systemMessage": message]) {
+        FileHandle.standardOutput.write(data)
+    }
+    exit(0)
 } catch NudgeClientError.unauthorized {
     // Token mismatch — surface to stderr so it shows up in Console.app and
     // the agent's hook log. Silent fallback would mean the user has no idea why

@@ -641,6 +641,25 @@ expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "cursor"]), .claude, 
 expect(HookAgent.codex.hostAppBundleIDs.contains("com.openai.codex"), true, "protocol: ChatGPT/Codex app counts as the agent's own UI")
 expect(HookAgent.claude.hostAppBundleIDs.isEmpty, true, "protocol: for Claude Code only the terminal list counts as its own UI")
 
+// Wait bound: Codex shows no prompt of its own while the hook waits, so the
+// hook gives up after two minutes. Claude's dialog runs alongside, so no bound.
+expect(hookMaxWait(agent: .codex, environment: [:], harness: false), 120, "wait: Codex gives up after two minutes")
+expectNil(hookMaxWait(agent: .claude, environment: [:], harness: false), "wait: Claude waits for the app's timeout")
+expect(hookMaxWait(agent: .codex, environment: ["NUDGE_HOOK_MAX_WAIT": "1"], harness: false), 120,
+       "wait: the override is ignored outside the harness")
+expect(hookMaxWait(agent: .codex, environment: ["NUDGE_HOOK_MAX_WAIT": "1.5"], harness: true), 1.5,
+       "wait: the harness can shorten it")
+expect(hookMaxWait(agent: .codex, environment: ["NUDGE_HOOK_MAX_WAIT": "soon"], harness: true), 120,
+       "wait: a malformed override is ignored")
+expect(hookMaxWait(agent: .codex, environment: ["NUDGE_HOOK_MAX_WAIT": "0"], harness: true), 120,
+       "wait: a zero override is ignored")
+expect(handBackMessage(agent: .codex, waited: 120), "Nudge got no answer in 2 minutes, so Codex is asking here instead.",
+       "wait: the hand-back message names the wait and the agent")
+expect(handBackMessage(agent: .codex, waited: 60), "Nudge got no answer in a minute, so Codex is asking here instead.",
+       "wait: one minute reads naturally")
+expect(handBackMessage(agent: .codex, waited: 1), "Nudge got no answer in 1 second, so Codex is asking here instead.",
+       "wait: short harness waits read in seconds")
+
 expect(HookEvent(rawValue: "PermissionRequest"), .permissionRequest, "protocol: event name parses")
 
 // Mode policy: PermissionRequest everywhere it fires but dontAsk; patterns

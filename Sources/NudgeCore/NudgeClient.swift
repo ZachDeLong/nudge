@@ -29,13 +29,17 @@ public enum NudgeClient {
         return launchAndWaitForPort(portFileURL: portFileURL, timeout: launchTimeout, appName: appName)
     }
 
+    /// Sends `prompt` and waits for the answer. With `waitAtMost`, gives up
+    /// after that many seconds and throws `.requestTimedOut`; closing the
+    /// socket is what tells the app to withdraw the prompt.
     public static func postPrompt(
         _ prompt: Prompt,
         to path: String,
-        port: UInt16
+        port: UInt16,
+        waitAtMost: TimeInterval? = nil
     ) throws -> DecisionResponse {
         let body = try JSONEncoder().encode(prompt)
-        let response = try post(path: path, port: port, body: body)
+        let response = try post(path: path, port: port, body: body, ioTimeout: waitAtMost)
         switch response.status {
         case 200:
             do {
@@ -209,7 +213,11 @@ public enum NudgeClient {
             let n = buf.withUnsafeMutableBufferPointer { ptr in
                 Darwin.read(s, ptr.baseAddress, ptr.count)
             }
-            if n < 0 { throw NudgeClientError.ioFailure }
+            if n < 0 {
+                // SO_RCVTIMEO ran out: the app is still waiting on the user.
+                if errno == EAGAIN || errno == EWOULDBLOCK { throw NudgeClientError.requestTimedOut }
+                throw NudgeClientError.ioFailure
+            }
             if n == 0 { break }
             response.append(contentsOf: buf[0..<n])
         }
