@@ -1,21 +1,23 @@
 # Nudge
 
-Claude Code and Codex permission prompts, in your menu bar.
+Answer Claude Code and Codex from whatever app you're in.
 
-When Claude stops to ask before running something (a `git push --force`, an edit to a config file), Nudge pops a panel out of the menu bar so you can click Allow from whatever app you're in. You don't have to go find the terminal.
+Start Claude on something and go watch a video. When it finishes, a small panel drops down from the menu bar with Claude's last message and a reply box. Type what's next and Claude keeps going in the same session. The video keeps playing, and you don't have to go back to the terminal.
+
+The same panel handles permission prompts. When Claude stops to ask before running something (a `git push --force`, an edit to a config file), click Allow from wherever you are.
 
 Nudge asks exactly when Claude Code would ask. If an allow rule or auto mode already covers a call, you don't see it. Plan approvals and Claude's multiple-choice questions stay in the terminal.
 
 It's a quality-of-life tool, not a security tool. The terminal still works: answer there and Nudge's copy goes away.
 
-It works the same for sessions in the Claude app's Code tab, since those run your `~/.claude` hooks too. The app sandboxes most shell commands, so Claude asks less often there.
+It works with [Codex](#codex) too, and with sessions in the Claude app's Code tab, since those run your `~/.claude` hooks. The app sandboxes most shell commands, so Claude asks less often there.
 
 ![Nudge asking to allow a git push, under its menu bar icon](./docs/img/hero.png)
 
 ## What's in the box
 
+- **"Claude finished" with a reply box.** When Claude (or Codex) finishes while you're in another app, Nudge shows its last message. Type the next thing and it keeps going in the same session.
 - **Permission popover.** Allow, Deny, allow for this session, or always allow. Enter and Esc work from any app once you grant Accessibility access (or switch them off).
-- **"Claude finished" with a reply box.** When Claude finishes while you're in another app, Nudge shows its last message. Type the next thing and Claude keeps going in the same session.
 - **`nudge-ask`.** A CLI Claude can call when it needs a typed answer from you. Same popover, with a text field.
 - **Agent sessions** (experimental). `nudge-claude` runs Claude Code in tmux, and the menu bar shows the live transcript with a reply box.
 - **`nudge-update`.** Checks GitHub for a new release and installs it after verifying the checksum.
@@ -55,9 +57,19 @@ Releases are signed with a self-signed certificate, not an Apple one. Gatekeeper
 
 </details>
 
+## When Claude finishes
+
+In auto mode Claude asks less and runs longer, so the useful moment is when it's done. If Claude finishes while you're off in another app, Nudge pops up its last message with a reply box:
+
+- Reply, and Claude carries on with it in the same session. Nudge answers Claude's Stop hook with your text, so this works in any terminal and in the Claude app, no tmux needed. (Claude's terminal labels the reply "Stop hook error". It isn't one.)
+- Dismiss it, and Claude stops as usual.
+- Go back to the terminal (or the Claude app, for its sessions) and Nudge lets go on its own, so the session is yours to type in. It also lets go after five minutes.
+
+It works for Codex too, in the CLI and the ChatGPT app (see [Codex](#codex)). It never takes the keyboard from what you're typing: click the reply box to answer. It stays out of the way while you're at the session, for `claude -p`, `codex exec` and other scripts, and for subagents. Switch it off with "Tell me when Claude finishes".
+
 ## Codex
 
-Nudge answers Codex's approval requests too, from the CLI or the ChatGPT app. If you have `~/.codex`, `nudge-setup` (or `make install`) adds two entries to its `hooks.json`, after backing the file up:
+Nudge answers Codex's approval requests too, from the CLI or the ChatGPT app. If you have `~/.codex`, `nudge-setup` (or `make install`) adds three entries to its `hooks.json`, after backing the file up:
 
 - `PermissionRequest` runs `nudge-hook --agent codex` when Codex is about to ask. The popover says Codex and shows the command, or the patch and the files it touches.
 - `Interrupt` runs `nudge-agent-hook --agent codex`. Stop a turn in Codex and Nudge's copy of its prompt goes away.
@@ -71,16 +83,6 @@ A few things work differently from Claude Code:
 - If you use auto-review, Nudge asks you before the reviewer sees anything. Codex doesn't tell hooks which reviewer it would use.
 - With "Skip when terminal is focused" on, Nudge also stays quiet while the ChatGPT app is in front.
 - Patterns and "Always allow" are Claude-only.
-
-## When Claude finishes
-
-In auto mode Claude asks less and runs longer, so the useful moment is when it's done. If Claude finishes while you're off in another app, Nudge pops up its last message with a reply box:
-
-- Reply, and Claude carries on with it in the same session. Nudge answers Claude's Stop hook with your text, so this works in any terminal and in the Claude app, no tmux needed. (Claude's terminal labels the reply "Stop hook error". It isn't one.)
-- Dismiss it, and Claude stops as usual.
-- Go back to the terminal (or the Claude app, for its sessions) and Nudge lets go on its own, so the session is yours to type in. It also lets go after five minutes.
-
-It works for Codex too, in the CLI and the ChatGPT app (see [Codex](#codex)). It never takes the keyboard from what you're typing: click the reply box to answer. It stays out of the way while you're at the session, for `claude -p`, `codex exec` and other scripts, and for subagents. Switch it off with "Tell me when Claude finishes".
 
 ## Patterns
 
@@ -158,7 +160,7 @@ Two hooks hand prompts to the menu bar app and wait for your answer:
 - `PermissionRequest` fires when Claude Code is about to show its own permission prompt. Nudge shows it too, and whichever you answer first wins.
 - `PreToolUse` fires on every tool call. Nudge only asks there if the call matches one of your patterns.
 
-A third hook, `nudge-agent-hook`, tells Nudge when a tool call finished or Claude's turn ended, so a prompt you answered in the terminal leaves the menu bar.
+A third hook, `nudge-agent-hook`, tells Nudge when a tool call finished or Claude's turn ended, so a prompt you answered in the terminal leaves the menu bar. When the turn ends while you're away, the same hook holds on while Nudge shows Claude's last message. If you reply, it hands your text back to Claude's Stop hook and Claude keeps going.
 
 If Nudge isn't running, the hooks start it. If anything fails, Claude asks in the terminal as usual.
 
