@@ -88,7 +88,9 @@ A few things work differently from Claude Code:
 
 ![Nudge asking to allow a git push --force that matched a pattern](./docs/img/hero.png)
 
-Patterns are for things you want to be asked about even when Claude wouldn't ask, like a command you've allow-listed or anything in auto mode. They live in `~/.config/nudge/patterns.txt`, one rule per line, and edits apply immediately. An empty file is fine: Nudge still shows Claude's own prompts.
+Patterns are for things you want to be asked about even when Claude wouldn't ask, like a command you've allow-listed. They live in `~/.config/nudge/patterns.txt`, one rule per line, and edits apply immediately. An empty file is fine: Nudge still shows Claude's own prompts.
+
+Patterns stay quiet in auto mode, where you've handed the calls to Claude. To be asked about something there anyway, add it to `permissions.ask` in `~/.claude/settings.json` (or tell Claude to add it). Claude asks about those in every mode, auto included, and Nudge shows the prompt.
 
 ```
 Bash(git push:*)        # prefix
@@ -169,7 +171,7 @@ If Nudge isn't running, the hooks start it. If anything fails, Claude asks in th
 Which modes Nudge asks in:
 
 - Claude's own prompts come through in every mode they happen in. In auto mode that's rare: ask rules, and calls the classifier won't decide. In `dontAsk` mode Claude never asks, so Nudge doesn't either.
-- Patterns ask in every mode except `bypassPermissions` and `dontAsk`.
+- Patterns ask in every mode except auto, `bypassPermissions` and `dontAsk`.
 
 Pausing Nudge hands any prompt that's up back to Claude, so you answer it in the terminal instead.
 

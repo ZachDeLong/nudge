@@ -76,6 +76,11 @@ struct ClaudeFixture {
     /// Substrings of Bash commands Claude must have run; if one is missing it
     /// didn't follow the instruction, so the run is INCONCLUSIVE.
     let expectRan: [String]
+    /// Claude's `--permission-mode` for the run (nil: its default).
+    let permissionMode: String?
+    /// Overrides `--model` for this case. Auto mode needs one that supports
+    /// it: on Haiku, Claude Code quietly runs in default mode instead.
+    let model: String?
 
     init(url: URL) throws {
         name = url.deletingPathExtension().lastPathComponent
@@ -105,6 +110,8 @@ struct ClaudeFixture {
         expectHookCounts = (obj["expectHookCounts"] as? [String: NSNumber])?.mapValues(\.intValue) ?? [:]
         expectHookOutputs = obj["expectHookOutputs"] as? [String: String] ?? [:]
         expectRan = obj["expectRan"] as? [String] ?? []
+        permissionMode = obj["permissionMode"] as? String
+        model = obj["model"] as? String
     }
 }
 
@@ -223,7 +230,7 @@ final class ClaudeRun {
     let started = Date()
 
     init(bin: String, model: String, prompt: String, settings: URL, cwd: URL,
-         transcript: URL, stderr: URL) throws {
+         permissionMode: String? = nil, transcript: URL, stderr: URL) throws {
         process.executableURL = URL(fileURLWithPath: bin)
         process.arguments = [
             "-p", prompt,
@@ -239,6 +246,7 @@ final class ClaudeRun {
             "--append-system-prompt", claudeSystemPrompt,
             "--max-budget-usd", "0.50",
         ]
+        if let permissionMode { process.arguments! += ["--permission-mode", permissionMode] }
         process.currentDirectoryURL = cwd
         var env = ProcessInfo.processInfo.environment
         for key in env.keys where key.hasPrefix("NUDGE_") { env[key] = nil }
@@ -513,8 +521,9 @@ func runAttempt(_ fx: ClaudeFixture, attempt n: Int, ctx: SuiteContext) -> Attem
 
     let run: ClaudeRun
     do {
-        run = try ClaudeRun(bin: ctx.claude, model: ctx.opts.model, prompt: fx.prompt, settings: sandbox.settings,
-                            cwd: sandbox.work, transcript: transcriptURL, stderr: stderrURL)
+        run = try ClaudeRun(bin: ctx.claude, model: fx.model ?? ctx.opts.model, prompt: fx.prompt, settings: sandbox.settings,
+                            cwd: sandbox.work, permissionMode: fx.permissionMode,
+                            transcript: transcriptURL, stderr: stderrURL)
     } catch {
         a.verdict = .fail
         a.problems = ["couldn't start claude: \(error)"]

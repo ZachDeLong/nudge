@@ -1,5 +1,5 @@
 {
-  "description": "patterns keep asking in auto mode",
+  "description": "auto mode turns patterns off: Claude's classifier decides, so a match there gets no prompt",
   "patterns": ["Bash(git push:*)"],
   "payload": {
     "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000037",
@@ -12,16 +12,6 @@
     "tool_input": {"command": "git push origin main", "description": "Push main to origin"},
     "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
   },
-  "expectPrompt": {
-    "kind": null,
-    "tool": "Bash",
-    "sessionId": "8d3f0c52-6a1e-4b7f-9e2d-000000000037",
-    "permissionMode": "auto",
-    "command": "git push origin main",
-    "matchedPattern": "Bash(git push:*)",
-    "event": "PreToolUse"
-  },
-  "respond": "deny",
-  "expectStdout": {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "The user denied this in Nudge."}},
+  "expectStdout": null,
   "expectExit": 0
 }

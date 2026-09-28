@@ -68,7 +68,7 @@ public func handBackMessage(agent: HookAgent, waited seconds: TimeInterval) -> S
 ///
 /// - `preToolUse` fires on every tool call, before the agent decides whether
 ///   to ask. Nudge only acts on it when a pattern in patterns.txt matches:
-///   the "always ask me about these" list, which applies even in auto mode.
+///   the "always ask me about these" list (not in auto mode; see nudgeAsks).
 /// - `permissionRequest` fires only when the agent is about to show its own
 ///   approval prompt. Nudge answers it in place of that prompt, so it covers
 ///   exactly what the agent would have asked, and stays silent while auto
@@ -85,16 +85,22 @@ public enum HookEvent: String, Sendable {
 ///   dontAsk: that mode denies anything not pre-approved instead of asking,
 ///   and a popover would contradict it. (Claude Code 2.1.283 doesn't fire
 ///   PermissionRequest in dontAsk at all; this holds if that changes.)
-/// - PreToolUse (patterns): the "ask me even when Claude wouldn't" list, so
-///   auto keeps them. Not in bypassPermissions (you turned checks off) or
-///   dontAsk (you said never ask; a pattern there would stall a headless
+/// - PreToolUse (patterns): the "ask me even when Claude wouldn't" list, for
+///   the modes where you're approving things yourself. Not in auto (you
+///   handed the calls to Claude's classifier, and prompts it wouldn't show
+///   defeat the point; to be asked about something there, add a
+///   `permissions.ask` rule, which Claude honors in auto and Nudge shows
+///   through PermissionRequest), bypassPermissions (you turned checks off)
+///   or dontAsk (you said never ask; a pattern there would stall a headless
 ///   run until Nudge's 5-minute timeout).
 public func nudgeAsks(event: HookEvent, permissionMode: String) -> Bool {
     switch event {
     case .permissionRequest: return permissionMode != "dontAsk"
-    case .preToolUse: return permissionMode != "bypassPermissions" && permissionMode != "dontAsk"
+    case .preToolUse: return !patternFreeModes.contains(permissionMode)
     }
 }
+
+private let patternFreeModes: Set<String> = ["auto", "bypassPermissions", "dontAsk"]
 
 /// Tools whose approval dialog is a choice between workflows rather than a
 /// yes/no permission (Claude's plan approval offers several ways to proceed).

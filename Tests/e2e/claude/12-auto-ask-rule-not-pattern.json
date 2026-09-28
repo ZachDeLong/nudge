@@ -1,0 +1,30 @@
+{
+  "description": "auto mode: a pattern on git push stays quiet, and an ask rule on it still reaches Nudge through Claude's own prompt",
+  "patterns": ["Bash(git push:*)"],
+  "files": {
+    "hello.txt": "hello from the nudge e2e harness\n"
+  },
+  "commitFiles": true,
+  "permissionMode": "auto",
+  "model": "sonnet",
+  "permissions": {
+    "allow": ["Bash", "Read", "Glob", "Grep"],
+    "ask": ["Bash(git push:*)"]
+  },
+  "prompt": "Use the Bash tool to run exactly this one command, verbatim: git push origin main\n\nDo not run anything else and do not look around the repository first. If a command fails or is denied, do not retry it and do not try an alternative; stop and reply with one short line saying what happened.",
+  "respond": "allow",
+  "expectPrompt": {
+    "tool": "Bash",
+    "kind": null,
+    "permissionMode": "auto",
+    "matchedPattern": null,
+    "event": "PermissionRequest"
+  },
+  "expectCommandContains": ["git push"],
+  "expectRan": ["git push"],
+  "expectPrompts": 1,
+  "expectHookCounts": {"PreToolUse:Bash": 1, "PermissionRequest:Bash": 1},
+  "expectHookOutputs": {"PermissionRequest:Bash": "\"behavior\":\"allow\""},
+  "expectRemote": "pushed",
+  "timeoutSeconds": 150
+}

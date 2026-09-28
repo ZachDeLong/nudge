@@ -697,14 +697,15 @@ expect(handBackMessage(agent: .codex, waited: 1), "Nudge got no answer in 1 seco
 expect(HookEvent(rawValue: "PermissionRequest"), .permissionRequest, "protocol: event name parses")
 
 // Mode policy: PermissionRequest everywhere it fires but dontAsk; patterns
-// everywhere but bypassPermissions and dontAsk.
+// in the modes where you approve calls yourself: not auto, bypassPermissions or dontAsk.
 for mode in ["default", "acceptEdits", "plan", "auto", "bypassPermissions"] {
     expect(nudgeAsks(event: .permissionRequest, permissionMode: mode), true, "mode: PermissionRequest asks in \(mode)")
 }
 expect(nudgeAsks(event: .permissionRequest, permissionMode: "dontAsk"), false, "mode: PermissionRequest stays quiet in dontAsk")
-for mode in ["default", "acceptEdits", "plan", "auto"] {
+for mode in ["default", "acceptEdits", "plan"] {
     expect(nudgeAsks(event: .preToolUse, permissionMode: mode), true, "mode: patterns ask in \(mode)")
 }
+expect(nudgeAsks(event: .preToolUse, permissionMode: "auto"), false, "mode: patterns stay quiet in auto")
 expect(nudgeAsks(event: .preToolUse, permissionMode: "dontAsk"), false, "mode: patterns stay quiet in dontAsk")
 expect(nudgeAsks(event: .preToolUse, permissionMode: "bypassPermissions"), false, "mode: patterns stay quiet in bypassPermissions")
 expect(toolsLeftToAgentUI.contains("ExitPlanMode"), true, "protocol: plan approval stays in Claude's own UI")

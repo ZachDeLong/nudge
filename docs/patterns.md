@@ -1,6 +1,6 @@
 # Patterns
 
-Nudge already shows every prompt Claude Code itself would show. `~/.config/nudge/patterns.txt` adds tool calls to ask about even when Claude wouldn't: a command you've allow-listed, or anything in auto mode. Patterns ask in every permission mode except `bypassPermissions`. One rule per line; `#` lines are comments. The hook re-reads the file on every call, so edits take effect immediately — no restart needed.
+Nudge already shows every prompt Claude Code itself would show. `~/.config/nudge/patterns.txt` adds tool calls to ask about even when Claude wouldn't, like a command you've allow-listed. Patterns ask in every permission mode except auto, `bypassPermissions` and `dontAsk`. In auto mode you've handed calls to Claude's classifier, so the way to be asked about something there is a `permissions.ask` rule in `~/.claude/settings.json`: Claude asks about those in auto mode too, and Nudge shows the prompt. One rule per line; `#` lines are comments. The hook re-reads the file on every call, so edits take effect immediately — no restart needed.
 
 ## Syntax
 
