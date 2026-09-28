@@ -333,6 +333,7 @@ final class MenuBarController: NSObject {
             onSessionAllow: { [weak self] in self?.sessionAllowCurrent() },
             onSubmitText: { [weak self] text in self?.submitAskText(text) },
             onCancelAsk: { [weak self] in self?.resolve(.cancel) },
+            onSubmitAnswers: { [weak self] answers in self?.submitAnswers(answers) },
             onTogglePause: { [weak self] in self?.togglePause() },
             onToggleSkipTerminal: { [weak self] in self?.toggleSkipTerminal() },
             onToggleGlobalKeys: { [weak self] in self?.toggleGlobalKeys() },
@@ -377,7 +378,7 @@ final class MenuBarController: NSObject {
     private var currentFocus: PanelFocus {
         switch currentPrompt?.resolvedKind {
         case nil, .ask?:    return .takesKey
-        case .finished?:    return .onClick
+        case .finished?, .question?: return .onClick
         case .permission?:  return .never
         }
     }
@@ -575,6 +576,13 @@ final class MenuBarController: NSObject {
         let response = DecisionResponse(decision: .text, text: text)
         Task { await queue.resolve(id: id, with: response) }
         showNotice(.sent)
+    }
+
+    private func submitAnswers(_ answers: [String: String]) {
+        guard store.notice == nil, let id = currentPrompt?.id, !answers.isEmpty else { return }
+        let response = DecisionResponse(decision: .answer, answers: answers)
+        Task { await queue.resolve(id: id, with: response) }
+        showNotice(.answered)
     }
 
     /// Holds the panel for a beat with the decision acknowledged in place of
@@ -866,8 +874,9 @@ enum PanelFocus {
     /// Takes key as it appears: idle (switches, the chat composer, esc to
     /// close) and asks (you type an answer).
     case takesKey
-    /// Key only once you click it: a finished message can pop up
-    /// mid-sentence in another app, so it never grabs the keyboard.
+    /// Key only once you click it: a finished message or a question can pop
+    /// up mid-sentence in another app, so it never grabs the keyboard.
+    /// Options answer with a click; the Other field takes key when clicked.
     case onClick
     /// Never key: permission prompts answer with clicks or the guarded
     /// global ⏎/esc, so SwiftUI Menu clicks can't grab focus either.

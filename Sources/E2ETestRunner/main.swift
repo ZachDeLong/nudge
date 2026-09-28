@@ -235,6 +235,9 @@ struct Step {
     let hook: String
     /// With respond "text": the reply typed into the finished message.
     let replyText: String?
+    /// With respond "answer": question text → answer, as Send in a
+    /// question sends them.
+    let answers: [String: String]?
     /// Fields the queued prompt must have; nil = nothing may be queued.
     let expectPrompt: [String: Any]?
     /// "allow" | "deny" answer it through the app; "hangup" SIGTERMs the hook
@@ -266,6 +269,7 @@ struct Step {
         env = obj["env"] as? [String: String] ?? [:]
         hook = obj["hook"] as? String ?? "nudge-hook"
         replyText = obj["replyText"] as? String
+        answers = obj["answers"] as? [String: String]
         agentArgs = obj["agentArgs"] as? [String] ?? []
         waitSeconds = (obj["waitSeconds"] as? NSNumber)?.doubleValue ?? 10
         expectPrompt = obj["expectPrompt"] as? [String: Any]
@@ -276,7 +280,7 @@ struct Step {
         agentEvent = obj["agentEvent"] == nil ? nil : try payloadData(obj["agentEvent"], "\(context): agentEvent")
         expectWithdrawn = obj["expectWithdrawn"] as? Bool ?? true
 
-        let responses = ["allow", "deny", "text", "cancel", "hangup", "reader-gone", "parent-killed", "agent-event", "wait"]
+        let responses = ["allow", "deny", "text", "answer", "cancel", "hangup", "reader-gone", "parent-killed", "agent-event", "wait"]
         if expectPrompt != nil {
             guard let respond, responses.contains(respond) else {
                 throw FixtureError("\(context): expectPrompt needs respond = \(responses.joined(separator: " | "))")
@@ -540,7 +544,7 @@ func run(_ step: Step, instance: NudgeInstance, binDir: URL, hookConfigDir: URL?
     default:
         let decision = step.respond!
         do {
-            let status = try instance.resolve(id: id, decision: decision, text: step.replyText)
+            let status = try instance.resolve(id: id, decision: decision, text: step.replyText, answers: step.answers)
             if status != 200 { problems.append("resolve(\(decision)) returned HTTP \(status)") }
         } catch {
             problems.append("resolve(\(decision)) failed: \(error)")

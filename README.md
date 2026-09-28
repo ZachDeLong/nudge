@@ -6,7 +6,7 @@ Start Claude on something and go watch a video. When it finishes, a small panel 
 
 The same panel handles permission prompts. When Claude stops to ask before running something (a `git push --force`, an edit to a config file), click Allow from wherever you are.
 
-Nudge asks exactly when Claude Code would ask. If an allow rule or auto mode already covers a call, you don't see it. Plan approvals and Claude's multiple-choice questions stay in the terminal.
+Nudge asks exactly when Claude Code would ask. If an allow rule or auto mode already covers a call, you don't see it. When Claude asks you to pick between options, those show up too. Plan approvals stay in the terminal.
 
 It's a quality-of-life tool, not a security tool. The terminal still works: answer there and Nudge's copy goes away.
 
@@ -18,6 +18,7 @@ It works with [Codex](#codex) too, and with sessions in the Claude app's Code ta
 
 - **"Claude finished" with a reply box.** When Claude (or Codex) finishes while you're in another app, Nudge shows its last message. Type the next thing and it keeps going in the same session.
 - **Permission popover.** Allow, Deny, allow for this session, or always allow. Enter and Esc work from any app once you grant Accessibility access (or switch them off).
+- **Claude's questions.** When Claude asks you to choose (single or multiple choice), Nudge shows the options, plus a box for your own answer. Answer there or in the terminal, whichever comes first.
 - **`nudge-ask`.** A CLI Claude can call when it needs a typed answer from you. Same popover, with a text field.
 - **Agent sessions** (experimental). `nudge-claude` runs Claude Code in tmux, and the menu bar shows the live transcript with a reply box.
 - **`nudge-update`.** Checks GitHub for a new release and installs it after verifying the checksum.
@@ -181,7 +182,7 @@ If you allow a pattern prompt and an ask rule covers the same command, Claude as
 
 - **Not notarized.** Releases are self-signed, so Gatekeeper doesn't know them: the pre-built zip needs the `xattr` step (Homebrew and `nudge-update` handle it).
 - **Answering in the terminal.** Esc or No there clears Nudge's copy right away. Yes clears it when the command finishes, because Claude doesn't tell hooks it was answered. For a slow command the prompt sits in the menu bar until then, and clicking it does nothing.
-- **Plan approvals and questions stay in the terminal.** Accepting a plan means choosing how Claude carries on, and a plain Allow can't say which.
+- **Plan approvals stay in the terminal.** Accepting a plan means choosing how Claude carries on, and a plain Allow can't say which.
 - **"Always allow" is for patterns.** Claude's own prompts get Allow, Deny, and allow for this session.
 - **FIFO queue, 5-minute timeout.** Stack up enough prompts and the oldest ones expire.
 - **One Mac.** Patterns don't sync.

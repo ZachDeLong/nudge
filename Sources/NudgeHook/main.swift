@@ -76,6 +76,7 @@ func loadPatterns() -> [String] {
 
 let matched: String?
 let displayCommand: String
+var questions: [AskQuestion]?
 
 switch event {
 case .preToolUse:
@@ -108,7 +109,15 @@ case .permissionRequest:
     // of those, except workflow choices that aren't a plain yes/no.
     guard !toolsLeftToAgentUI.contains(toolName) else { exit(0) }
     matched = nil
-    displayCommand = displayTarget(toolName: toolName, input: toolInput)
+    if toolName == "AskUserQuestion" {
+        // Claude's multiple-choice questions: Nudge shows the options and
+        // answers with your picks. Anything it can't read stays in Claude.
+        guard agent == .claude, let parsed = AskQuestion.parse(toolInput: toolInput) else { exit(0) }
+        questions = parsed
+        displayCommand = parsed.map(\.question).joined(separator: "\n")
+    } else {
+        displayCommand = displayTarget(toolName: toolName, input: toolInput)
+    }
 }
 
 let detail = (toolInput["description"] as? String)?
@@ -116,6 +125,7 @@ let detail = (toolInput["description"] as? String)?
 
 let prompt = Prompt(
     id: UUID().uuidString,
+    kind: questions == nil ? nil : .question,
     tool: toolName,
     command: displayCommand,
     cwd: cwd,
@@ -126,7 +136,8 @@ let prompt = Prompt(
     detail: detail?.isEmpty == false ? detail : nil,
     event: event.rawValue,
     callKey: CallKey.make(sessionID: sessionId, toolName: toolName, toolInput: inputJSON["tool_input"]),
-    subagentId: inputJSON["agent_id"] as? String
+    subagentId: inputJSON["agent_id"] as? String,
+    questions: questions
 )
 
 guard let port = NudgeClient.locatePort() else {
@@ -163,6 +174,14 @@ do {
     exit(0)
 } catch {
     exit(0) // Anything else: fall back silently to the agent's own prompt.
+}
+
+if questions != nil {
+    // No answers (you chose to answer in the terminal): Claude's own dialog,
+    // which has been up all along, takes it.
+    guard decision.decision == .answer, let answers = decision.answers, !answers.isEmpty else { exit(0) }
+    writeHookOutput(questionAnswerOutput(toolInput: toolInput, answers: answers))
+    exit(0)
 }
 
 guard decision.decision == .allow || decision.decision == .deny else {

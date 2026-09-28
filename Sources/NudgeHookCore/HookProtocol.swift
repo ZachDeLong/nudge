@@ -105,8 +105,24 @@ private let patternFreeModes: Set<String> = ["auto", "bypassPermissions", "dontA
 /// Tools whose approval dialog is a choice between workflows rather than a
 /// yes/no permission (Claude's plan approval offers several ways to proceed).
 /// Answering them with a bare Allow would pick one silently, so they stay in
-/// the agent's own UI.
-public let toolsLeftToAgentUI: Set<String> = ["ExitPlanMode", "AskUserQuestion"]
+/// the agent's own UI. (AskUserQuestion is a choice too, but Nudge asks it
+/// itself and answers with what you picked; see questionAnswerOutput.)
+public let toolsLeftToAgentUI: Set<String> = ["ExitPlanMode"]
+
+/// Answers Claude's AskUserQuestion from its PermissionRequest hook: allow,
+/// with the tool's input plus `answers` (question text → answer). Claude then
+/// skips its own dialog and reports "User answered Claude's questions"
+/// (checked on Claude Code 2.1.283, multi-select and free text included).
+public func questionAnswerOutput(toolInput: [String: Any], answers: [String: String]) -> [String: Any] {
+    var input = toolInput
+    input["answers"] = answers
+    return [
+        "hookSpecificOutput": [
+            "hookEventName": "PermissionRequest",
+            "decision": ["behavior": "allow", "updatedInput": input],
+        ]
+    ]
+}
 
 // MARK: - Finished messages (Stop hook)
 

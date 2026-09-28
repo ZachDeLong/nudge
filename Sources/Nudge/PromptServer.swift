@@ -298,12 +298,13 @@ actor PromptServer {
         let id: String
         let decision: Decision
         let text: String?
+        let answers: [String: String]?
     }
 
     /// E2E harness endpoints, behind the same bearer token as everything else:
     ///
     /// - `POST /test/queue` → `{"prompts": [Prompt]}`, head first.
-    /// - `POST /test/resolve` with `{"id", "decision", "text"?}` → answers the
+    /// - `POST /test/resolve` with `{"id", "decision", "text"?, "answers"?}` → answers the
     ///   head prompt exactly as a click would reach the queue. 409 if `id`
     ///   isn't the head, the same stale-answer guard the popover gets.
     ///
@@ -322,7 +323,7 @@ actor PromptServer {
                 await sendAndAwait(Data(resp), on: conn)
                 return
             }
-            let response = DecisionResponse(decision: body.decision, text: body.text)
+            let response = DecisionResponse(decision: body.decision, text: body.text, answers: body.answers)
             let resolved = await queue.resolve(id: body.id, with: response)
             let resp = resolved
                 ? HTTPCodec.writeResponse(status: 200, contentType: "text/plain", body: Array("ok".utf8))

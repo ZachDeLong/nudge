@@ -10,6 +10,7 @@ struct PopoverView: View {
     let onSessionAllow: () -> Void
     let onSubmitText: (String) -> Void
     let onCancelAsk: () -> Void
+    let onSubmitAnswers: ([String: String]) -> Void
     let onTogglePause: () -> Void
     let onToggleSkipTerminal: () -> Void
     let onToggleGlobalKeys: () -> Void
@@ -55,6 +56,8 @@ struct PopoverView: View {
             askContent(for: prompt)
         case .finished:
             finishedContent(for: prompt)
+        case .question:
+            questionContent(for: prompt)
         }
     }
 
@@ -174,6 +177,18 @@ struct PopoverView: View {
         header(prompt: prompt, title: "\(prompt.agentName) finished")
         AskBody(question: prompt.command, notice: state.notice, style: .finished,
                 onSubmit: onSubmitText, onCancel: onCancelAsk)
+    }
+
+    // MARK: - Question flow
+
+    @ViewBuilder
+    private func questionContent(for prompt: Prompt) -> some View {
+        let count = prompt.questions?.count ?? 0
+        header(prompt: prompt, title: count > 1 ? "\(prompt.agentName) has \(count) questions"
+                                                : "\(prompt.agentName) has a question")
+        QuestionBody(questions: prompt.questions ?? [], notice: state.notice,
+                     preset: state.previewAnswers,
+                     onSubmit: onSubmitAnswers, onAnswerInTerminal: onCancelAsk)
     }
 
     // MARK: - Shared header
@@ -377,6 +392,7 @@ enum PromptCopy {
     /// Tool name for the subtitle. Codex's `apply_patch` reads as "Patch".
     static func toolLabel(_ prompt: Prompt) -> String {
         if prompt.resolvedKind == .finished { return "Done" }
+        if prompt.resolvedKind == .question { return "Question" }
         return prompt.tool == "apply_patch" ? "Patch" : prompt.tool
     }
 
@@ -830,6 +846,192 @@ private struct AskBody: View {
     }
 }
 
+// MARK: - Question body (Claude's multiple choice)
+
+/// Claude's AskUserQuestion: each question with its options as rows (radio
+/// for single choice, checkboxes for multiple) and an Other field, like
+/// Claude's own dialog. Send is live once every question has an answer.
+/// "Answer in terminal" leaves it to Claude's dialog, which is up the whole
+/// time; whichever gets an answer first wins.
+private struct QuestionBody: View {
+    let questions: [AskQuestion]
+    let notice: DecisionNotice?
+    let onSubmit: ([String: String]) -> Void
+    let onAnswerInTerminal: () -> Void
+    @State private var chosen: [String: Set<String>]
+    @State private var other: [String: String] = [:]
+    @FocusState private var otherFocus: String?
+
+    init(questions: [AskQuestion], notice: DecisionNotice?, preset: [String: Set<String>] = [:],
+         onSubmit: @escaping ([String: String]) -> Void, onAnswerInTerminal: @escaping () -> Void) {
+        self.questions = questions
+        self.notice = notice
+        self.onSubmit = onSubmit
+        self.onAnswerInTerminal = onAnswerInTerminal
+        _chosen = State(initialValue: preset)
+    }
+
+    private var answers: [String: String]? {
+        var out: [String: String] = [:]
+        for q in questions {
+            guard let a = q.answer(chosen: chosen[q.question] ?? [], other: other[q.question] ?? "") else { return nil }
+            out[q.question] = a
+        }
+        return out
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(questions, id: \.question) { q in
+                        questionView(q)
+                    }
+                }
+            }
+            .frame(maxHeight: 460)
+            .fixedSize(horizontal: false, vertical: true)
+
+            ZStack {
+                if let notice {
+                    NoticeRow(notice: notice)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                } else {
+                    HStack(spacing: 8) {
+                        Button(action: onAnswerInTerminal) {
+                            ButtonLabel(title: "Answer in terminal", key: "esc")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .keyboardShortcut(.cancelAction)
+                        .help("Leave it to Claude's own dialog")
+
+                        Button(action: submit) {
+                            ButtonLabel(title: "Send", key: "⏎", weight: .semibold, prominent: true)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(answers == nil)
+                    }
+                    .transition(.opacity)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func questionView(_ q: AskQuestion) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let header = q.header, !header.isEmpty, questions.count > 1 {
+                Text(header.uppercased())
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            Text(q.question)
+                .font(.system(size: 13, weight: .medium))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .padding(.bottom, 2)
+            if q.multiSelect {
+                Text("Choose any")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+            }
+            ForEach(q.options, id: \.label) { option in
+                optionRow(q, option)
+            }
+            otherRow(q)
+        }
+    }
+
+    private func isChosen(_ q: AskQuestion, _ label: String) -> Bool {
+        chosen[q.question]?.contains(label) == true
+    }
+
+    private func toggle(_ q: AskQuestion, _ label: String) {
+        var set = chosen[q.question] ?? []
+        if q.multiSelect {
+            if set.contains(label) { set.remove(label) } else { set.insert(label) }
+        } else {
+            // Single choice: an option replaces anything typed under Other.
+            set = [label]
+            other[q.question] = ""
+        }
+        chosen[q.question] = set
+    }
+
+    @ViewBuilder
+    private func optionRow(_ q: AskQuestion, _ option: AskQuestion.Option) -> some View {
+        let on = isChosen(q, option.label)
+        Button(action: { toggle(q, option.label) }) {
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                Image(systemName: symbol(multi: q.multiSelect, on: on))
+                    .font(.system(size: 13))
+                    .foregroundStyle(on ? Color.accentColor : Color.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.label)
+                        .font(.system(size: 13))
+                    if let d = option.description, !d.isEmpty {
+                        Text(d)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(on ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func otherRow(_ q: AskQuestion) -> some View {
+        let text = Binding(
+            get: { other[q.question] ?? "" },
+            set: { value in
+                other[q.question] = value
+                // Single choice: typing an answer replaces the chosen option.
+                if !q.multiSelect, !value.isEmpty { chosen[q.question] = [] }
+            }
+        )
+        let typed = !(other[q.question] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        HStack(spacing: 9) {
+            Image(systemName: "pencil")
+                .font(.system(size: 13))
+                .foregroundStyle(typed ? Color.accentColor : Color.secondary)
+            TextField("Other…", text: text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .lineLimit(1...4)
+                .focused($otherFocus, equals: q.question)
+                .onKeyPress(.return) {
+                    if NSEvent.modifierFlags.contains(.shift) { return .ignored }
+                    submit()
+                    return .handled
+                }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(typed ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func symbol(multi: Bool, on: Bool) -> String {
+        multi ? (on ? "checkmark.square.fill" : "square") : (on ? "largecircle.fill.circle" : "circle")
+    }
+
+    private func submit() {
+        guard let answers else { return }
+        onSubmit(answers)
+    }
+}
+
 // MARK: - Small parts
 
 /// Stands in for the button row for a beat after a decision, so the click
@@ -1006,6 +1208,7 @@ private struct ToolBadge: View {
         case "WebFetch", "WebSearch":               return "globe"
         case "Ask":                                 return "bubble.left.fill"
         case "Stop":                                return "checkmark.bubble.fill"
+        case "AskUserQuestion":                     return "questionmark.bubble.fill"
         case let t where t.hasPrefix("mcp__"):      return "puzzlepiece.extension.fill"
         default:                                    return "sparkles"
         }

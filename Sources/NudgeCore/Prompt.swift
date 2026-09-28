@@ -6,6 +6,68 @@ public enum PromptKind: String, Codable, Equatable {
     /// The agent finished its turn while you were away from its terminal.
     /// Shows its last message; a reply keeps the session going.
     case finished
+    /// Claude's multiple-choice questions (its AskUserQuestion tool). The
+    /// answers go back through the PermissionRequest hook.
+    case question
+}
+
+/// One of Claude's AskUserQuestion questions: 2–4 options, single or
+/// multiple choice. Claude's own dialog also takes free text ("Other").
+public struct AskQuestion: Codable, Equatable {
+    public struct Option: Codable, Equatable {
+        public let label: String
+        public let description: String?
+
+        public init(label: String, description: String? = nil) {
+            self.label = label
+            self.description = description
+        }
+    }
+
+    public let question: String
+    /// A short tag Claude gives the question ("Auth method").
+    public let header: String?
+    public let options: [Option]
+    public let multiSelect: Bool
+
+    public init(question: String, header: String? = nil, options: [Option], multiSelect: Bool = false) {
+        self.question = question
+        self.header = header
+        self.options = options
+        self.multiSelect = multiSelect
+    }
+
+    /// The questions in an AskUserQuestion `tool_input`, or nil if it isn't
+    /// shaped the way Nudge knows how to answer (Claude then asks itself).
+    public static func parse(toolInput: [String: Any]) -> [AskQuestion]? {
+        guard let raw = toolInput["questions"] as? [[String: Any]], !raw.isEmpty else { return nil }
+        var questions: [AskQuestion] = []
+        for q in raw {
+            guard let text = q["question"] as? String, !text.isEmpty,
+                  let rawOptions = q["options"] as? [[String: Any]] else { return nil }
+            let options = rawOptions.compactMap { o in
+                (o["label"] as? String).map { Option(label: $0, description: o["description"] as? String) }
+            }
+            guard !options.isEmpty, options.count == rawOptions.count else { return nil }
+            questions.append(AskQuestion(question: text, header: q["header"] as? String, options: options,
+                                         multiSelect: q["multiSelect"] as? Bool ?? false))
+        }
+        // Answers are keyed by question text, so two identical ones can't
+        // both be answered.
+        guard Set(questions.map(\.question)).count == questions.count else { return nil }
+        return questions
+    }
+
+    /// The answer as Claude's own dialog records it: the chosen labels joined
+    /// with ", " (option order), then any text typed under Other. Nil when
+    /// nothing is chosen, or a single-choice question has both.
+    public func answer(chosen: Set<String>, other: String) -> String? {
+        let typed = other.trimmingCharacters(in: .whitespacesAndNewlines)
+        let labels = options.map(\.label).filter(chosen.contains)
+        if !multiSelect, labels.count + (typed.isEmpty ? 0 : 1) != 1 { return nil }
+        let parts = labels + (typed.isEmpty ? [] : [typed])
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
 }
 
 public struct Prompt: Codable, Equatable, Identifiable {
@@ -41,6 +103,8 @@ public struct Prompt: Codable, Equatable, Identifiable {
     /// "claude-desktop" in the Claude app. Tells the app which window shows
     /// this session.
     public let entrypoint: String?
+    /// For `.question`: what Claude asked, in order.
+    public let questions: [AskQuestion]?
 
     public init(
         id: String,
@@ -56,7 +120,8 @@ public struct Prompt: Codable, Equatable, Identifiable {
         event: String? = nil,
         callKey: String? = nil,
         subagentId: String? = nil,
-        entrypoint: String? = nil
+        entrypoint: String? = nil,
+        questions: [AskQuestion]? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -72,6 +137,7 @@ public struct Prompt: Codable, Equatable, Identifiable {
         self.callKey = callKey
         self.subagentId = subagentId
         self.entrypoint = entrypoint
+        self.questions = questions
     }
 
     public var resolvedKind: PromptKind { kind ?? .permission }
@@ -88,15 +154,20 @@ public enum Decision: String, Codable, Equatable {
     case deny
     case text
     case cancel
+    /// Answers to a `.question` prompt, in `answers`.
+    case answer
 }
 
 public struct DecisionResponse: Codable, Equatable {
     public let decision: Decision
     /// Present when `decision == .text`.
     public let text: String?
+    /// Present when `decision == .answer`: question text → answer.
+    public let answers: [String: String]?
 
-    public init(decision: Decision, text: String? = nil) {
+    public init(decision: Decision, text: String? = nil, answers: [String: String]? = nil) {
         self.decision = decision
         self.text = text
+        self.answers = answers
     }
 }

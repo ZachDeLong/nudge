@@ -1,0 +1,46 @@
+{
+  "description": "Claude's multiple-choice question (AskUserQuestion) comes to Nudge; Send answers it: allow, with the picks in updatedInput.answers",
+  "patterns": [],
+  "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000022",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000022.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "prompt_id": "c41d2e7a-3b9f-4e10-a6d8-5f2c9b7e1a03",
+    "permission_mode": "auto",
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "AskUserQuestion",
+    "tool_input": {"questions": [
+      {"question": "Which database?", "header": "DB", "options": [{"label": "Postgres", "description": "Use Postgres"}, {"label": "SQLite", "description": "Use SQLite"}], "multiSelect": false},
+      {"question": "Which checks?", "header": "CI", "options": [{"label": "Unit"}, {"label": "Lint"}], "multiSelect": true}
+    ]}
+  },
+  "expectPrompt": {
+    "kind": "question",
+    "tool": "AskUserQuestion",
+    "event": "PermissionRequest",
+    "permissionMode": "auto",
+    "command": "Which database?\nWhich checks?",
+    "questions": [
+      {"question": "Which database?", "header": "DB", "options": [{"label": "Postgres", "description": "Use Postgres"}, {"label": "SQLite", "description": "Use SQLite"}], "multiSelect": false},
+      {"question": "Which checks?", "header": "CI", "options": [{"label": "Unit"}, {"label": "Lint"}], "multiSelect": true}
+    ]
+  },
+  "respond": "answer",
+  "answers": {"Which database?": "SQLite", "Which checks?": "Unit, Lint"},
+  "expectStdout": {
+    "hookSpecificOutput": {
+      "hookEventName": "PermissionRequest",
+      "decision": {
+        "behavior": "allow",
+        "updatedInput": {
+          "questions": [
+            {"question": "Which database?", "header": "DB", "options": [{"label": "Postgres", "description": "Use Postgres"}, {"label": "SQLite", "description": "Use SQLite"}], "multiSelect": false},
+            {"question": "Which checks?", "header": "CI", "options": [{"label": "Unit"}, {"label": "Lint"}], "multiSelect": true}
+          ],
+          "answers": {"Which database?": "SQLite", "Which checks?": "Unit, Lint"}
+        }
+      }
+    }
+  },
+  "expectExit": 0
+}

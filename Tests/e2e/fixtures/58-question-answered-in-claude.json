@@ -1,0 +1,32 @@
+{
+  "description": "A question answered in Claude's own dialog: its PostToolUse carries the answers (and annotations) in tool_input, and still withdraws Nudge's copy",
+  "patterns": [],
+  "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000058",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000058.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "auto",
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "AskUserQuestion",
+    "tool_input": {"questions": [{"question": "Which color?", "header": "Color", "options": [{"label": "Red"}, {"label": "Blue"}, {"label": "Green"}], "multiSelect": true}]}
+  },
+  "expectPrompt": {
+    "kind": "question",
+    "tool": "AskUserQuestion",
+    "event": "PermissionRequest"
+  },
+  "respond": "agent-event",
+  "agentEvent": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000058",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000058.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "auto",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "AskUserQuestion",
+    "tool_input": {"questions": [{"question": "Which color?", "header": "Color", "options": [{"label": "Red"}, {"label": "Blue"}, {"label": "Green"}], "multiSelect": true}], "answers": {"Which color?": "Blue, Green"}, "annotations": {}},
+    "tool_response": {"questions": [{"question": "Which color?", "header": "Color", "options": [{"label": "Red"}, {"label": "Blue"}, {"label": "Green"}], "multiSelect": true}], "answers": {"Which color?": "Blue, Green"}, "annotations": {}},
+    "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k58"
+  },
+  "expectStdout": null,
+  "expectExit": 0
+}

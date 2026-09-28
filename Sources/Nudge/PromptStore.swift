@@ -20,6 +20,8 @@ final class PromptStore: ObservableObject {
     /// The app in front answers ⏎ and esc itself (a terminal, the Claude or
     /// ChatGPT app), so Nudge's global keys are off until you switch away.
     @Published var keysStandDown: Bool = false
+    /// Options shown already chosen in a question, for preview renders only.
+    var previewAnswers: [String: Set<String>] = [:]
 }
 
 /// Global key monitoring (⏎ allows, esc denies from any app) only receives
@@ -43,6 +45,7 @@ enum DecisionNotice: Equatable {
     case allowed
     case denied
     case sent
+    case answered
     /// The prompt left the queue without an answer from here: the agent
     /// (named here) was interrupted, or the request timed out.
     case withdrawn(agent: String)
@@ -52,6 +55,7 @@ enum DecisionNotice: Equatable {
         case .allowed:   return "Allowed"
         case .denied:    return "Denied"
         case .sent:      return "Sent"
+        case .answered:  return "Answered"
         case .withdrawn(let agent): return "\(agent) stopped waiting"
         }
     }
@@ -61,6 +65,7 @@ enum DecisionNotice: Equatable {
         case .allowed:   return "checkmark.circle.fill"
         case .denied:    return "xmark.circle.fill"
         case .sent:      return "paperplane.circle.fill"
+        case .answered:  return "checkmark.circle.fill"
         case .withdrawn: return "arrow.uturn.backward.circle.fill"
         }
     }
@@ -69,7 +74,7 @@ enum DecisionNotice: Equatable {
         switch self {
         case .allowed:   return .green
         case .denied:    return .secondary
-        case .sent:      return .accentColor
+        case .sent, .answered: return .accentColor
         case .withdrawn: return .secondary
         }
     }

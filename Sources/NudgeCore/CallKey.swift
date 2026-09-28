@@ -8,8 +8,17 @@ import Foundation
 /// Claude Code 2.1.283), but PermissionRequest has no `tool_use_id`. So the
 /// join key is a digest of those three, with the input's keys sorted so their
 /// order in the JSON can't matter.
+///
+/// AskUserQuestion is the exception: PostToolUse's input also carries the
+/// `answers` (and `annotations`) it was answered with, so those are left out.
 public enum CallKey {
     public static func make(sessionID: String, toolName: String, toolInput: Any?) -> String {
+        var toolInput = toolInput
+        if toolName == "AskUserQuestion", var fields = toolInput as? [String: Any] {
+            fields["answers"] = nil
+            fields["annotations"] = nil
+            toolInput = fields
+        }
         let input = toolInput.flatMap {
             try? JSONSerialization.data(
                 withJSONObject: $0,

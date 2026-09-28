@@ -745,6 +745,54 @@ expect(nudgeAsks(event: .preToolUse, permissionMode: "auto"), false, "mode: patt
 expect(nudgeAsks(event: .preToolUse, permissionMode: "dontAsk"), false, "mode: patterns stay quiet in dontAsk")
 expect(nudgeAsks(event: .preToolUse, permissionMode: "bypassPermissions"), false, "mode: patterns stay quiet in bypassPermissions")
 expect(toolsLeftToAgentUI.contains("ExitPlanMode"), true, "protocol: plan approval stays in Claude's own UI")
+expect(toolsLeftToAgentUI.contains("AskUserQuestion"), false, "protocol: Claude's questions come to Nudge")
+
+// MARK: AskUserQuestion
+
+let dbQuestion: [String: Any] = [
+    "question": "Which database?", "header": "DB", "multiSelect": false,
+    "options": [["label": "Postgres", "description": "Use Postgres"], ["label": "SQLite", "description": "Use SQLite"]],
+]
+let ciQuestion: [String: Any] = [
+    "question": "Which checks?", "header": "CI", "multiSelect": true,
+    "options": [["label": "Unit"], ["label": "Lint"], ["label": "E2E"]],
+]
+let parsedQuestions = AskQuestion.parse(toolInput: ["questions": [dbQuestion, ciQuestion]])
+expect(parsedQuestions?.count, 2, "question: parses both")
+expect(parsedQuestions?.first?.options.map(\.label), ["Postgres", "SQLite"], "question: option labels in order")
+expect(parsedQuestions?.first?.options.first?.description, "Use Postgres", "question: option description")
+expect(parsedQuestions?.last?.multiSelect, true, "question: multiSelect")
+expectNil(AskQuestion.parse(toolInput: [:]), "question: no questions → Claude asks")
+expectNil(AskQuestion.parse(toolInput: ["questions": [["question": "Q?", "options": [["nope": 1]]]]]), "question: option without a label → Claude asks")
+expectNil(AskQuestion.parse(toolInput: ["questions": [dbQuestion, dbQuestion]]), "question: duplicate question text → Claude asks")
+if let db = parsedQuestions?.first, let ci = parsedQuestions?.last {
+    expect(db.answer(chosen: ["SQLite"], other: ""), "SQLite", "answer: single choice")
+    expect(db.answer(chosen: [], other: "  MySQL "), "MySQL", "answer: single choice, typed")
+    expectNil(db.answer(chosen: ["SQLite"], other: "MySQL"), "answer: single choice can't be both")
+    expectNil(db.answer(chosen: [], other: " "), "answer: nothing chosen")
+    expect(ci.answer(chosen: ["E2E", "Unit"], other: ""), "Unit, E2E", "answer: multi joins labels in option order, like Claude")
+    expect(ci.answer(chosen: ["Lint"], other: "Typecheck"), "Lint, Typecheck", "answer: multi adds typed text last")
+}
+let askInput: [String: Any] = ["questions": [dbQuestion]]
+let answerOut = questionAnswerOutput(toolInput: askInput, answers: ["Which database?": "SQLite"])
+let answerDecision = (answerOut["hookSpecificOutput"] as? [String: Any])?["decision"] as? [String: Any]
+expect(answerDecision?["behavior"] as? String, "allow", "answer output: allow")
+let updated = answerDecision?["updatedInput"] as? [String: Any]
+expect(updated?["answers"] as? [String: String], ["Which database?": "SQLite"], "answer output: answers in updatedInput")
+expect((updated?["questions"] as? [[String: Any]])?.count, 1, "answer output: keeps the questions")
+// PostToolUse's input carries the answers; the call key must still match.
+expect(
+    CallKey.make(sessionID: "s", toolName: "AskUserQuestion",
+                 toolInput: ["questions": [dbQuestion], "answers": ["Which database?": "SQLite"], "annotations": [:]]),
+    CallKey.make(sessionID: "s", toolName: "AskUserQuestion", toolInput: askInput),
+    "callKey: AskUserQuestion ignores answers and annotations"
+)
+expect(
+    CallKey.make(sessionID: "s", toolName: "Bash", toolInput: ["command": "ls", "answers": 1])
+        == CallKey.make(sessionID: "s", toolName: "Bash", toolInput: ["command": "ls"]),
+    false,
+    "callKey: other tools keep every field"
+)
 
 expect(displayTarget(toolName: "Bash", input: ["command": "mkdir build", "description": "Make dir"]), "mkdir build", "display: Bash shows the command")
 expect(displayTarget(toolName: "Write", input: ["file_path": "/tmp/a.txt", "content": "x"]), "/tmp/a.txt", "display: file tools show the path")

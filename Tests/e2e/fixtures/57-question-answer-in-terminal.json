@@ -1,0 +1,21 @@
+{
+  "description": "\"Answer in terminal\" on a question: the hook says nothing, so Claude's own dialog (up all along) takes the answer",
+  "patterns": [],
+  "payload": {
+    "session_id": "8d3f0c52-6a1e-4b7f-9e2d-000000000057",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/8d3f0c52-6a1e-4b7f-9e2d-000000000057.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "default",
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "AskUserQuestion",
+    "tool_input": {"questions": [{"question": "Which database?", "header": "DB", "options": [{"label": "Postgres"}, {"label": "SQLite"}], "multiSelect": false}]}
+  },
+  "expectPrompt": {
+    "kind": "question",
+    "tool": "AskUserQuestion",
+    "event": "PermissionRequest"
+  },
+  "respond": "cancel",
+  "expectStdout": null,
+  "expectExit": 0
+}

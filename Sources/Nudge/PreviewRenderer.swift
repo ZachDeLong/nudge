@@ -174,6 +174,33 @@ enum PreviewRenderer {
             cwd: cwd, sessionId: "s"
         )
 
+        let question = Prompt(
+            id: "q1", kind: .question, tool: "AskUserQuestion",
+            command: "Which database should the new service use?",
+            cwd: cwd, sessionId: "s", permissionMode: "default", agent: "claude",
+            event: "PermissionRequest",
+            questions: [AskQuestion(
+                question: "Which database should the new service use?", header: "Database",
+                options: [
+                    .init(label: "Postgres", description: "Same as the main app; migrations via Prisma"),
+                    .init(label: "SQLite", description: "One file, no server; fine for a small internal tool"),
+                    .init(label: "DynamoDB", description: "Managed and serverless, but a new dependency"),
+                ])]
+        )
+        let questions = Prompt(
+            id: "q2", kind: .question, tool: "AskUserQuestion",
+            command: "Which checks should run in CI?\nShip it behind a flag?",
+            cwd: cwd, sessionId: "s", permissionMode: "default", agent: "claude",
+            event: "PermissionRequest",
+            questions: [
+                AskQuestion(question: "Which checks should run in CI?", header: "CI checks",
+                            options: [.init(label: "Unit tests"), .init(label: "Lint"), .init(label: "E2E")],
+                            multiSelect: true),
+                AskQuestion(question: "Ship it behind a flag?", header: "Rollout",
+                            options: [.init(label: "Yes, off by default"), .init(label: "No, ship it on")]),
+            ]
+        )
+
         let emptyChat = AgentChatStore()
 
         let chat = AgentChatStore()
@@ -208,9 +235,11 @@ enum PreviewRenderer {
 
         func make(
             _ prompt: Prompt?, depth: Int, prefs: Prefs, store: AgentChatStore,
-            notice: DecisionNotice? = nil, globalKeys: Bool = true
+            notice: DecisionNotice? = nil, globalKeys: Bool = true,
+            answers: [String: Set<String>] = [:]
         ) -> PopoverView {
             let state = PromptStore()
+            state.previewAnswers = answers
             state.prompt = prompt
             state.queueDepth = depth
             state.prefs = prefs
@@ -219,7 +248,7 @@ enum PreviewRenderer {
             return PopoverView(
                 state: state,
                 onAllow: {}, onDeny: {}, onAlwaysAllow: {}, onSessionAllow: {},
-                onSubmitText: { _ in }, onCancelAsk: {},
+                onSubmitText: { _ in }, onCancelAsk: {}, onSubmitAnswers: { _ in },
                 onTogglePause: {}, onToggleSkipTerminal: {}, onToggleGlobalKeys: {}, onToggleFinishedMessages: {}, onQuit: {},
                 onEnableGlobalKeys: {},
                 agentChat: store,
@@ -241,6 +270,12 @@ enum PreviewRenderer {
             ("claude-request",     make(claudeRequest, depth: 1, prefs: watching, store: emptyChat)),
             ("permission-no-keys", make(push,       depth: 1, prefs: watching, store: emptyChat, globalKeys: false)),
             ("ask",                make(ask,        depth: 1, prefs: watching, store: emptyChat)),
+            ("question",           make(question,   depth: 1, prefs: watching, store: emptyChat,
+                                        answers: ["Which database should the new service use?": ["Postgres"]])),
+            ("question-multi",     make(questions,  depth: 1, prefs: watching, store: emptyChat,
+                                        answers: ["Which checks should run in CI?": ["Unit tests", "Lint"]])),
+            ("question-answered",  make(question,   depth: 1, prefs: watching, store: emptyChat, notice: .answered,
+                                        answers: ["Which database should the new service use?": ["Postgres"]])),
             ("idle-watching",      make(nil,        depth: 0, prefs: watching, store: emptyChat)),
             ("idle-no-keys",       make(nil,        depth: 0, prefs: watching, store: emptyChat, globalKeys: false)),
             ("idle-paused",        make(nil,        depth: 0, prefs: paused,   store: emptyChat)),
