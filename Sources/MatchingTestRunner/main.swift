@@ -174,24 +174,57 @@ expect(
 // `Bash(git push:*)` silently missed a push after `Don't forget...`.
 
 expect(
-    splitBashCommand("cat > NOTES.md <<'EOF'\nDon't forget to bump the version.\nEOF\ngit push origin main"),
-    ["cat > NOTES.md <<'EOF'", "Don't forget to bump the version.", "git push origin main"],
+    splitBashCommand("sh <<'EOF'\nDon't forget to bump the version.\nEOF\ngit push origin main"),
+    ["sh <<'EOF'", "Don't forget to bump the version.", "git push origin main"],
     "split: apostrophe in a heredoc body doesn't open a quote"
 )
 expect(
-    splitBashCommand("cat <<EOF\nrm -rf foo\nEOF"),
-    ["cat <<EOF", "rm -rf foo"],
-    "split: heredoc body lines stay candidates"
+    splitBashCommand("cat > NOTES.md <<'EOF'\nDon't forget to bump the version.\nEOF\ngit push origin main"),
+    ["cat > NOTES.md <<'EOF'", "git push origin main"],
+    "split: apostrophe in a skipped text body doesn't open a quote either"
 )
 expect(
-    splitBashCommand("cat <<-EOF\n\tit's here\n\tEOF\nrm x"),
-    ["cat <<-EOF", "it's here", "rm x"],
+    splitBashCommand("bash <<EOF\nrm -rf foo\nEOF"),
+    ["bash <<EOF", "rm -rf foo"],
+    "split: a shell's heredoc body lines stay candidates"
+)
+expect(
+    splitBashCommand("bash <<-EOF\n\tit's here\n\tEOF\nrm x"),
+    ["bash <<-EOF", "it's here", "rm x"],
     "split: <<- terminator may be tab-indented"
 )
 expect(
-    splitBashCommand("cat <<A <<'B'\na's\nA\nb's\nB\nls"),
-    ["cat <<A <<'B'", "a's", "b's", "ls"],
+    splitBashCommand("bash <<A <<'B'\na's\nA\nb's\nB\nls"),
+    ["bash <<A <<'B'", "a's", "b's", "ls"],
     "split: two heredocs on one line"
+)
+
+// Heredoc bodies only count as commands when a shell may run them: a script
+// fed to python or written out with cat is text (Zach, 2026-09-27: `--force`
+// in a python heredoc popped `Bash(*--force*)`). Unknown readers stay checked.
+expect(splitBashCommand("cat <<EOF\nrm -rf foo\nEOF"), ["cat <<EOF"], "split: cat's heredoc body is text")
+expect(splitBashCommand("python3 - <<'EOF'\nimport os\nEOF\nls"), ["python3 - <<'EOF'", "ls"], "split: python's heredoc body is text")
+expect(splitBashCommand("FOO=1 /usr/bin/python3.12 <<EOF\nx\nEOF"), ["FOO=1 /usr/bin/python3.12 <<EOF"], "split: assignment + path + versioned python")
+expect(splitBashCommand("git commit -F - <<EOF\nrm it\nEOF"), ["git commit -F - <<EOF"], "split: commit message body is text")
+expect(splitBashCommand("cat <<EOF | sh\nrm -rf foo\nEOF"), ["cat <<EOF", "sh", "rm -rf foo"], "split: cat piped into sh runs the body")
+expect(splitBashCommand("ls; cat <<EOF\nrm x\nEOF"), ["ls", "cat <<EOF"], "split: an earlier command on the line with no heredoc still counts")
+expect(splitBashCommand("ssh box <<EOF\nrm -rf foo\nEOF"), ["ssh box <<EOF", "rm -rf foo"], "split: ssh's body is remote shell")
+expect(splitBashCommand("docker exec -i c sh <<EOF\nrm x\nEOF"), ["docker exec -i c sh <<EOF", "rm x"], "split: unknown reader stays checked")
+expect(splitBashCommand("sudo -u bob python3 <<EOF\nrm x\nEOF"), ["sudo -u bob python3 <<EOF", "rm x"], "split: sudo with flags is unknown, stays checked")
+expect(splitBashCommand("sudo tee /etc/x <<EOF\nrm x\nEOF"), ["sudo tee /etc/x <<EOF"], "split: sudo tee body is text")
+expect(splitBashCommand("ls\ncat <<EOF\nrm x\nEOF\nbash <<B\nrm y\nB"), ["ls", "cat <<EOF", "bash <<B", "rm y"], "split: each heredoc line decides for itself")
+let pyForce = "python3 - <<'EOF'\nimport argparse\np = argparse.ArgumentParser()\np.add_argument('--force')\nEOF"
+expectNil(matchedPattern(toolName: "Bash", target: pyForce, patterns: ["Bash(*--force*)"]), "match: --force in a python heredoc doesn't fire")
+expect(bashInfixText(pyForce), "python3 - <<'EOF'\n\n\n\nEOF", "infix text: python body removed")
+expect(
+    matchedPattern(toolName: "Bash", target: "bash <<EOF\ngit push --force\nEOF", patterns: ["Bash(*--force*)"]),
+    "Bash(*--force*)",
+    "match: --force in a bash heredoc still fires"
+)
+expect(
+    matchedPattern(toolName: "Bash", target: pyForce + "\ngit push --force", patterns: ["Bash(*--force*)"]),
+    "Bash(*--force*)",
+    "match: --force after a python heredoc still fires"
 )
 expect(
     splitBashCommand("x=$(cat <<'EOF'\nit's\nEOF\n) && rm foo"),
@@ -204,8 +237,8 @@ expect(
     "split: heredoc inside a subshell stays wrapped"
 )
 expect(
-    splitBashCommand("cat <<EOF\nit's never closed"),
-    ["cat <<EOF", "it's never closed"],
+    splitBashCommand("bash <<EOF\nit's never closed"),
+    ["bash <<EOF", "it's never closed"],
     "split: unterminated heredoc runs to the end"
 )
 expect(splitBashCommand("cat <<< 'hi' && ls"), ["cat <<< 'hi'", "ls"], "split: <<< is a here-string, not a heredoc")
@@ -394,12 +427,15 @@ expect(
     "Bash(*--force*)",
     "match: line continuation keeps the command whole, infix still wins"
 )
-// Heredoc bodies get split too. That's the deliberate trade: an extra prompt
-// when a script *containing* `rm -rf` is written out, never a missed one.
-expect(
+// A script written out with cat is text; one fed to a shell is checked.
+expectNil(
     matchedPattern(toolName: "Bash", target: "cat <<EOF > /tmp/s.sh\nrm -rf /tmp/foo\nEOF", patterns: patterns),
+    "match: a script written out with cat doesn't fire"
+)
+expect(
+    matchedPattern(toolName: "Bash", target: "sh <<EOF\nrm -rf /tmp/foo\nEOF", patterns: patterns),
     "Bash(rm:*)",
-    "match: heredoc body errs toward prompting"
+    "match: a heredoc fed to sh fires"
 )
 // A quoted newline is still just text — no phantom segment, no false prompt.
 expectNil(

@@ -87,11 +87,58 @@ public func globMatch(path: String, glob: String) -> Bool {
 /// Heredoc bodies are read line by line with no quote tracking, since bash
 /// treats them as plain text: an apostrophe in `Don't` must not open a quote
 /// that swallows the rest of the command. At the top level each body line
-/// still becomes its own candidate segment, which errs toward more prompts,
-/// never fewer, so it's the safe direction to be wrong in. `#` comments are
-/// dropped for the same reason.
+/// becomes its own candidate segment when the body may run as shell (see
+/// `readsHeredocAsText`); a body fed to python, cat and the like is skipped.
+/// `#` comments are dropped.
 public func splitBashCommand(_ command: String) -> [String] {
+    scanBashCommand(command).segments
+}
+
+/// The command as infix patterns see it: the raw text minus heredoc bodies
+/// that only a non-shell program reads, so `--force` in a python script
+/// doesn't match `Bash(*--force*)`.
+public func bashInfixText(_ command: String) -> String {
+    var out = command
+    for range in scanBashCommand(command).textBodies.reversed() {
+        out.removeSubrange(range)
+    }
+    return out
+}
+
+/// Programs that read a heredoc as data or as their own language, never as
+/// shell. Anything not listed (bash, ssh, docker, an unknown tool) is treated
+/// as shell, so a body is only ever skipped when that's clearly safe.
+private let heredocTextReaders: Set<String> = [
+    "cat", "tee", "node", "deno", "bun", "ruby", "perl", "php", "lua", "Rscript",
+    "osascript", "swift", "psql", "mysql", "sqlite3", "jq", "git", "gh",
+    "grep", "sed", "awk", "sort", "head", "tail", "wc",
+]
+
+/// Leading words that run the next word as the command.
+private let commandPrefixes: Set<String> = ["sudo", "env", "command", "exec", "time", "nohup", "nice", "doas"]
+
+/// Whether segment `seg` is a command known to read its stdin as text rather
+/// than shell. Leading `VAR=value` words and plain prefixes (`sudo`, `env`) are
+/// skipped; a prefix with flags (`sudo -u x`) makes the answer unknown, so no.
+private func readsHeredocAsText(_ seg: String) -> Bool {
+    var words = seg.split(whereSeparator: { $0 == " " || $0 == "\t" })[...]
+    while let w = words.first, w.contains("="), w.first.map({ $0.isLetter || $0 == "_" }) == true {
+        words = words.dropFirst()
+    }
+    while let w = words.first, commandPrefixes.contains(String(w)) {
+        words = words.dropFirst()
+        if words.first?.hasPrefix("-") == true { return false }
+    }
+    guard let word = words.first else { return false }
+    let name = String(word.split(separator: "/").last ?? word)
+    if name.hasPrefix("python") { return name.dropFirst(6).allSatisfy { $0.isNumber || $0 == "." } }
+    return heredocTextReaders.contains(name)
+}
+
+private func scanBashCommand(_ command: String) -> (segments: [String], textBodies: [Range<String.Index>]) {
     var segments: [String] = []
+    var textBodies: [Range<String.Index>] = []
+    var lineStart = 0        // index in `segments` of the current line's first command
     var current = ""
     var i = command.startIndex
     var inSingle = false
@@ -118,8 +165,10 @@ public func splitBashCommand(_ command: String) -> [String] {
 
     /// Reads the body of every heredoc opened on the line that just ended.
     /// `start` is the index just past that line's newline. Returns the index
-    /// of the newline that ends the last terminator line, or endIndex.
-    func consumeHeredocBodies(from start: String.Index, nested: Bool) -> String.Index {
+    /// of the newline that ends the last terminator line, or endIndex. With
+    /// `asText`, top-level body lines are recorded in `textBodies` instead of
+    /// becoming segments.
+    func consumeHeredocBodies(from start: String.Index, nested: Bool, asText: Bool) -> String.Index {
         var pos = start
         var resume = command.endIndex
         for (n, doc) in pendingHeredocs.enumerated() {
@@ -132,8 +181,12 @@ public func splitBashCommand(_ command: String) -> [String] {
                 if nested {
                     current.append(contentsOf: line)
                 } else if !isTerminator {
-                    current = line
-                    flush()
+                    if asText {
+                        textBodies.append(pos..<lineEnd)
+                    } else {
+                        current = line
+                        flush()
+                    }
                 }
                 if lineEnd == command.endIndex {
                     pos = lineEnd
@@ -243,7 +296,12 @@ public func splitBashCommand(_ command: String) -> [String] {
             if c.isNewline && !pendingHeredocs.isEmpty {
                 let nested = dollarParenDepth > 0 || subshellDepth > 0 || braceDepth > 0
                 if nested { current.append(c) } else { flush() }
-                i = consumeHeredocBodies(from: command.index(after: i), nested: nested)
+                // Text only if the heredoc's command and everything after it on
+                // the line read it as text: `cat <<EOF | sh` still runs the body.
+                let fromHeredoc = segments[lineStart...].drop(while: { !$0.contains("<<") })
+                let asText = !nested && !fromHeredoc.isEmpty && fromHeredoc.allSatisfy(readsHeredocAsText)
+                i = consumeHeredocBodies(from: command.index(after: i), nested: nested, asText: asText)
+                if !nested { lineStart = segments.count }
                 continue
             }
             if c == "<" {
@@ -375,6 +433,7 @@ public func splitBashCommand(_ command: String) -> [String] {
         }
         if c == ";" || c == "|" || c.isNewline {
             flush()
+            if c.isNewline { lineStart = segments.count }
             i = command.index(after: i)
             continue
         }
@@ -384,7 +443,7 @@ public func splitBashCommand(_ command: String) -> [String] {
     }
 
     flush()
-    return segments
+    return (segments, textBodies)
 }
 
 /// Returns prefix/exact match candidates for a Bash target — top-level segments
@@ -524,7 +583,7 @@ public func matchedPattern(toolName: String, target: String, patterns: [String])
     let normalizedTarget: String
     if toolFamily == .bash {
         candidates = bashCandidates(for: target)
-        normalizedTarget = normalizeForInfix(target)
+        normalizedTarget = normalizeForInfix(bashInfixText(target))
     } else {
         candidates = []
         normalizedTarget = ""
