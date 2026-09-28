@@ -1435,6 +1435,31 @@ if let a = Version("0.10.0"), let b = Version("0.9.0") {
 
 // MARK: report
 
+// MARK: MessageLinks (finished panel)
+
+let linkFiles: Set<String> = ["/work/app/demo.mp4", "/work/app/out/report.html", "/Users/dev/shot.png", "/work/notes.md"]
+func linkTargets(_ text: String, cwd: String = "/work/app") -> [String] {
+    MessageLinks.find(in: text, cwd: cwd, fileExists: { linkFiles.contains($0) }).map { link in
+        link.url.isFileURL ? link.url.path : link.url.absoluteString
+    }
+}
+func linkTexts(_ text: String) -> [String] {
+    MessageLinks.find(in: text, cwd: "/work/app", fileExists: { linkFiles.contains($0) })
+        .map { (text as NSString).substring(with: $0.range) }
+}
+expect(linkTargets("Dev server is up at localhost:3000."), ["http://localhost:3000"], "links: bare localhost with port")
+expect(linkTargets("Open http://127.0.0.1:8080/admin now"), ["http://127.0.0.1:8080/admin"], "links: scheme + path")
+expect(linkTargets("see 127.0.0.1:5173/docs"), ["http://127.0.0.1:5173/docs"], "links: bare IP with path")
+expect(linkTargets("Docs: https://example.com/a?b=1."), ["https://example.com/a?b=1"], "links: https, trailing period dropped")
+expect(linkTargets("Rendered demo.mp4 and out/report.html."), ["/work/app/demo.mp4", "/work/app/out/report.html"], "links: relative files that exist")
+expect(linkTexts("Rendered demo.mp4, done."), ["demo.mp4"], "links: comma after a file isn't part of it")
+expect(linkTargets("Saved ~/shot.png"), [], "links: ~ expands to the real home, not /Users/dev")
+expect(linkTargets("Saved /Users/dev/shot.png"), ["/Users/dev/shot.png"], "links: absolute path")
+expect(linkTargets("Wrote ../notes.md"), ["/work/notes.md"], "links: ../ resolves against cwd")
+expect(linkTargets("Wrote `demo.mp4`"), ["/work/app/demo.mp4"], "links: inside backticks")
+expect(linkTargets("Missing gone.mp4 and e.g. this"), [], "links: missing files and abbreviations stay plain")
+expect(linkTargets("Fetched https://cdn.example.com/demo.mp4"), ["https://cdn.example.com/demo.mp4"], "links: a URL isn't also a file")
+
 print("\(passed) passed, \(failures.count) failed")
 for failure in failures {
     print(failure)

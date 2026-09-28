@@ -172,7 +172,7 @@ struct PopoverView: View {
     @ViewBuilder
     private func finishedContent(for prompt: Prompt) -> some View {
         header(prompt: prompt, title: "\(prompt.agentName) finished")
-        AskBody(question: prompt.command, notice: state.notice, style: .finished,
+        AskBody(question: prompt.command, notice: state.notice, style: .finished, linkBase: prompt.cwd,
                 onSubmit: onSubmitText, onCancel: onCancelAsk)
     }
 
@@ -746,6 +746,10 @@ private struct AskBody: View {
     let question: String
     let notice: DecisionNotice?
     var style: Style = .ask
+    /// The session's folder. When set, the message renders its inline
+    /// markdown and links web addresses and files that exist (see
+    /// MessageLinks); clicking one opens it in its default app.
+    var linkBase: String? = nil
     let onSubmit: (String) -> Void
     let onCancel: () -> Void
     @State private var text: String = ""
@@ -759,7 +763,13 @@ private struct AskBody: View {
         VStack(alignment: .leading, spacing: 12) {
             // Question
             ScrollView(.vertical, showsIndicators: true) {
-                Text(question)
+                Group {
+                    if let linkBase {
+                        Text(LinkedMessage.render(question, cwd: linkBase))
+                    } else {
+                        Text(question)
+                    }
+                }
                     .font(.system(size: 13))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12).padding(.vertical, 10)
@@ -827,6 +837,23 @@ private struct AskBody: View {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         onSubmit(trimmed)
+    }
+}
+
+/// An agent's message as the finished panel shows it: inline markdown
+/// (bold, `code`, [links](…)) plus MessageLinks' web addresses and files.
+enum LinkedMessage {
+    static func render(_ text: String, cwd: String) -> AttributedString {
+        var attr = (try? AttributedString(
+            markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(text)
+        let plain = String(attr.characters)
+        for link in MessageLinks.find(in: plain, cwd: cwd) {
+            guard let range = Range(link.range, in: attr), attr[range].link == nil else { continue }
+            attr[range].link = link.url
+        }
+        return attr
     }
 }
 

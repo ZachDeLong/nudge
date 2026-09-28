@@ -174,6 +174,14 @@ enum PreviewRenderer {
             cwd: cwd, sessionId: "s"
         )
 
+        let finished = Prompt(
+            id: "f1", kind: .finished, tool: "Stop",
+            command: """
+            Done. The demo is rendered to `Package.swift`'s folder as **Sources/Nudge/PreviewRenderer.swift** and the dev server is up at localhost:3000. Docs: https://github.com/ZachDeLong/nudge
+            """,
+            cwd: FileManager.default.currentDirectoryPath, sessionId: "s", agent: "claude", entrypoint: "cli"
+        )
+
         let emptyChat = AgentChatStore()
 
         let chat = AgentChatStore()
@@ -241,6 +249,7 @@ enum PreviewRenderer {
             ("claude-request",     make(claudeRequest, depth: 1, prefs: watching, store: emptyChat)),
             ("permission-no-keys", make(push,       depth: 1, prefs: watching, store: emptyChat, globalKeys: false)),
             ("ask",                make(ask,        depth: 1, prefs: watching, store: emptyChat)),
+            ("finished-links",     make(finished,   depth: 1, prefs: watching, store: emptyChat)),
             ("idle-watching",      make(nil,        depth: 0, prefs: watching, store: emptyChat)),
             ("idle-no-keys",       make(nil,        depth: 0, prefs: watching, store: emptyChat, globalKeys: false)),
             ("idle-paused",        make(nil,        depth: 0, prefs: paused,   store: emptyChat)),
