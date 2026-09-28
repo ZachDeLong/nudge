@@ -2,7 +2,6 @@
 # Lines starting with # are ignored. Full syntax: docs/patterns.md.
 
 Bash(git push:*)
-Bash(rm:*)
 Bash(*--force*)
 Bash(*deploy*)
 Edit(/etc/**)
