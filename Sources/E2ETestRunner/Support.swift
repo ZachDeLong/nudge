@@ -138,6 +138,17 @@ final class NudgeInstance {
         try (patterns.joined(separator: "\n") + "\n").write(to: patternsURL, atomically: true, encoding: .utf8)
     }
 
+    /// The app the instance takes to be in front (nil: none), for checks the
+    /// app makes itself rather than the hook (see TestAPI.frontmostBundleID).
+    func setAppFrontmost(_ bundleID: String?) throws {
+        let url = configDir.appendingPathComponent("test-frontmost")
+        if let bundleID {
+            try bundleID.write(to: url, atomically: true, encoding: .utf8)
+        } else if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+
     /// The pending prompts, head first, as raw JSON objects.
     func queue() throws -> [[String: Any]] {
         let (status, body) = try request("/test/queue", body: Data("{}".utf8))

@@ -307,6 +307,9 @@ struct Fixture {
     /// listening), as a forgotten NUDGE_CONFIG_DIR would. "{hookConfigDir}"
     /// in expectStdout strings becomes that path.
     let hookConfigDir: String?
+    /// The app the Nudge instance sees in front (NUDGE_TEST_FRONTMOST in a
+    /// step's env is what the hook sees). Default: none.
+    let appFrontmost: String?
 
     init(url: URL) throws {
         name = url.deletingPathExtension().lastPathComponent
@@ -328,6 +331,7 @@ struct Fixture {
         }
         knownFailure = obj["knownFailure"] as? String
         hookConfigDir = obj["hookConfigDir"] as? String
+        appFrontmost = obj["appFrontmost"] as? String
         if let h = hookConfigDir, !["missing", "stale"].contains(h) {
             throw FixtureError("\(name): hookConfigDir must be missing | stale")
         }
@@ -341,8 +345,9 @@ func run(_ fx: Fixture, instance: NudgeInstance, binDir: URL) -> [String] {
     instance.drain()
     do {
         try instance.setPatterns(fx.patterns)
+        try instance.setAppFrontmost(fx.appFrontmost)
     } catch {
-        return ["couldn't write patterns: \(error)"]
+        return ["couldn't set up the instance: \(error)"]
     }
 
     var hookConfigDir: URL?

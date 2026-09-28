@@ -1,0 +1,21 @@
+{
+  "description": "Claude finishes while you're in another app, but you're back at its terminal by the time the message reaches Nudge: it never shows, and Claude stops as usual",
+  "patterns": [],
+  "hook": "nudge-agent-hook",
+  "appFrontmost": "com.mitchellh.ghostty",
+  "env": {
+    "CLAUDE_CODE_ENTRYPOINT": "cli",
+    "NUDGE_TEST_FRONTMOST": "com.google.Chrome"
+  },
+  "payload": {
+    "session_id": "5c1b2f7e-9a44-4d1e-b8a1-3e2f6c0d9b17",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/5c1b2f7e-9a44-4d1e-b8a1-3e2f6c0d9b17.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "auto",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "Pushed the fix to origin/main. CI is running."
+  },
+  "expectStdout": null,
+  "expectExit": 0
+}

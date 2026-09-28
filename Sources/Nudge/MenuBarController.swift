@@ -303,10 +303,7 @@ final class MenuBarController: NSObject {
 
     private func frontAppDidChange(_ front: String?) {
         if let front {
-            cancelPending {
-                $0.resolvedKind == .finished
-                    && FrontmostApp.sessionUIBundleIDs(entrypoint: $0.entrypoint, agent: $0.agent).contains(front)
-            }
+            cancelPending { $0.isFinishedMessage(shownBy: front) }
         }
         if keyMonitor != nil { answerKeys.typed(at: Date()) }
         setKeysStandDown(front.map(FrontmostApp.ownPromptBundleIDs.contains) ?? false)
@@ -1101,5 +1098,14 @@ final class PromptPanel {
         let margin: CGFloat = 14
         return NSPoint(x: visible.maxX - size.width - margin,
                        y: visible.maxY - size.height - margin)
+    }
+}
+
+extension Prompt {
+    /// A finished message whose session shows itself in app `front` (its
+    /// terminal, or the agent's own app), so you're looking at it already.
+    func isFinishedMessage(shownBy front: String) -> Bool {
+        resolvedKind == .finished
+            && FrontmostApp.sessionUIBundleIDs(entrypoint: entrypoint, agent: agent).contains(front)
     }
 }

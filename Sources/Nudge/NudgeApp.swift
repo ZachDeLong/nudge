@@ -117,4 +117,13 @@ enum TestAPI {
     static var isEnabled: Bool {
         ProcessInfo.processInfo.environment["NUDGE_TEST_API"] == "1" && ConfigDir.isOverridden
     }
+
+    /// The app in front. A harness instance reads it from `test-frontmost` in
+    /// its config dir instead (nil when the file isn't there), so results
+    /// don't depend on whatever is on the Mac's screen.
+    static func frontmostBundleID() -> String? {
+        guard isEnabled else { return NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
+        let url = ConfigDir.url.appendingPathComponent("test-frontmost")
+        return (try? String(contentsOf: url, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }

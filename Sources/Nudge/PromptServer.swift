@@ -184,6 +184,17 @@ actor PromptServer {
             await sendAndAwait(Data(resp), on: conn)
             return
         }
+        // A finished message whose session is in front again: you went back
+        // to it after the hook looked, so no app switch is coming to let it
+        // go. Claude stops as usual, and the message never shows.
+        if prompt.resolvedKind == .finished,
+           let front = await MainActor.run(body: { TestAPI.frontmostBundleID() }),
+           prompt.isFinishedMessage(shownBy: front) {
+            let body = (try? JSONEncoder().encode(DecisionResponse(decision: .cancel))) ?? Data()
+            let resp = HTTPCodec.writeResponse(status: 200, contentType: "application/json", body: Array(body))
+            await sendAndAwait(Data(resp), on: conn)
+            return
+        }
         let waiter = Task { [queue, timeoutSeconds] in
             try await queue.enqueueWithTimeout(prompt, seconds: timeoutSeconds)
         }
