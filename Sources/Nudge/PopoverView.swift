@@ -777,7 +777,6 @@ private struct AskBody: View {
                     if let linkBase {
                         Text(LinkedMessage.render(question, cwd: linkBase))
                             .environment(\.openURL, OpenURLAction { url in
-                                NSLog("Nudge: opening %@", url.absoluteString)
                                 NSWorkspace.shared.open(url)
                                 return .handled
                             })
