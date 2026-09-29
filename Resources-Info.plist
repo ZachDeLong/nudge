@@ -15,9 +15,9 @@
     <key>NSAppleEventsUsageDescription</key>
     <string>Nudge brings a session's terminal tab to the front when you click Go to.</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.5.3</string>
+    <string>1.5.4</string>
     <key>CFBundleVersion</key>
-    <string>16</string>
+    <string>17</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
 </dict>
