@@ -1253,6 +1253,45 @@ do {
     }
 }
 
+// MARK: PromptQueue — finished messages step aside
+//
+// A finished message waits up to ten minutes for a reply. A permission
+// prompt arriving meanwhile goes ahead of it rather than stalling its
+// session, and the message comes back once the prompt is answered.
+
+func makeFinished(_ id: String) -> Prompt {
+    Prompt(id: id, kind: .finished, tool: "Stop", command: "Done.", cwd: "/tmp",
+           sessionId: "other", permissionMode: "auto", event: "Stop")
+}
+
+do {
+    let queue = PromptQueue()
+    let heads = HeadRecorder()
+    await queue.setOnHeadChange { heads.record($0, $1) }
+
+    let finishedF = Task { try await queue.enqueue(makeFinished("F")) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    let finishedG = Task { try await queue.enqueue(makeFinished("G")) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    let permP = Task { try await queue.enqueue(makePrompt("P", command: "rm p")) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    let permQ = Task { try await queue.enqueue(makePrompt("Q", command: "rm q")) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+    let order = await queue.snapshot().map(\.id)
+    expect(order, ["P", "Q", "F", "G"], "queue yield: prompts go ahead of finished messages, each kind in order")
+
+    await queue.resolve(id: "P", with: .allow)
+    await queue.resolve(id: "Q", with: .deny)
+    expect(heads.last?.id, "F", "queue yield: the finished message comes back after the prompts")
+    let gotP = try await permP.value
+    expect(gotP.decision, Decision.allow, "queue yield: the jumping prompt gets its own answer")
+    _ = try await permQ.value
+    await queue.resolve(id: "F", with: .cancel)
+    await queue.resolve(id: "G", with: .cancel)
+    _ = try await finishedF.value
+    _ = try await finishedG.value
+}
+
 // MARK: AgentActivityStore — pruning uses our clock, not the wire's
 
 func activityEvent(_ name: String, session: String, at date: Date) -> AgentHookEvent {

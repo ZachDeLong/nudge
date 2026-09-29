@@ -165,7 +165,8 @@ struct PopoverView: View {
     @ViewBuilder
     private func askContent(for prompt: Prompt) -> some View {
         header(prompt: prompt, title: "\(prompt.agentName) is asking")
-        AskBody(question: prompt.command, notice: state.notice, onSubmit: onSubmitText, onCancel: onCancelAsk)
+        AskBody(question: prompt.command, notice: state.notice, draftKey: prompt.id,
+                onSubmit: onSubmitText, onCancel: onCancelAsk)
     }
 
     // MARK: - Finished flow
@@ -174,6 +175,7 @@ struct PopoverView: View {
     private func finishedContent(for prompt: Prompt) -> some View {
         header(prompt: prompt, title: "\(prompt.agentName) finished", jumpTo: SessionJump.appName(for: prompt))
         AskBody(question: prompt.command, notice: state.notice, style: .finished, linkBase: prompt.cwd,
+                draftKey: prompt.id,
                 onSubmit: onSubmitText, onCancel: onCancelAsk)
     }
 
@@ -760,6 +762,9 @@ private struct AskBody: View {
     /// markdown and links web addresses and files that exist (see
     /// MessageLinks); clicking one opens it in its default app.
     var linkBase: String? = nil
+    /// Keeps what you've typed when another prompt takes the panel and this
+    /// one comes back (a permission prompt goes ahead of a finished message).
+    var draftKey: String? = nil
     let onSubmit: (String) -> Void
     let onCancel: () -> Void
     @State private var text: String = ""
@@ -825,7 +830,7 @@ private struct AskBody: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 } else {
                     HStack(spacing: 8) {
-                        Button(action: onCancel) {
+                        Button(action: cancel) {
                             ButtonLabel(title: style.cancelTitle, key: "esc")
                         }
                         .buttonStyle(.bordered)
@@ -844,14 +849,32 @@ private struct AskBody: View {
                 }
             }
         }
-        .onAppear { if style.focusOnAppear { focused = true } }
+        .onAppear {
+            if let draftKey, text.isEmpty { text = ReplyDrafts.text[draftKey] ?? "" }
+            if style.focusOnAppear { focused = true }
+        }
+        .onChange(of: text) { _, new in
+            if let draftKey { ReplyDrafts.text[draftKey] = new.isEmpty ? nil : new }
+        }
     }
 
     private func submit() {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        if let draftKey { ReplyDrafts.text[draftKey] = nil }
         onSubmit(trimmed)
     }
+
+    private func cancel() {
+        if let draftKey { ReplyDrafts.text[draftKey] = nil }
+        onCancel()
+    }
+}
+
+/// Replies typed but not sent, by prompt id (see AskBody.draftKey).
+@MainActor
+private enum ReplyDrafts {
+    static var text: [String: String] = [:]
 }
 
 /// An agent's message as the finished panel shows it: inline markdown

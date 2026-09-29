@@ -28,6 +28,10 @@ actor PromptServer {
     private var listener: NWListener?
     private(set) var boundPort: UInt16 = 0
     private let timeoutSeconds: TimeInterval
+    /// How long a finished message waits for a reply: you may be off looking
+    /// at what the agent made. Kept under Claude Code's 600-second default
+    /// hook timeout, so Nudge lets go before Claude kills the hook.
+    private let finishedTimeoutSeconds: TimeInterval
     private let tokenURL: URL
     /// Serves `/test/*` (see `respondToTestAPI`). Off unless the app was
     /// launched by the e2e harness; see `TestAPI.isEnabled`.
@@ -42,12 +46,14 @@ actor PromptServer {
         port: UInt16,
         tokenURL: URL = TokenFile.defaultURL,
         timeoutSeconds: TimeInterval = 300,
+        finishedTimeoutSeconds: TimeInterval = 590,
         testAPIEnabled: Bool = false
     ) {
         self.queue = queue
         self.activityStore = activityStore
         self.requestedPort = port == 0 ? .any : NWEndpoint.Port(rawValue: port)!
         self.timeoutSeconds = timeoutSeconds
+        self.finishedTimeoutSeconds = finishedTimeoutSeconds
         self.tokenURL = tokenURL
         self.testAPIEnabled = testAPIEnabled
     }
@@ -195,8 +201,9 @@ actor PromptServer {
             await sendAndAwait(Data(resp), on: conn)
             return
         }
-        let waiter = Task { [queue, timeoutSeconds] in
-            try await queue.enqueueWithTimeout(prompt, seconds: timeoutSeconds)
+        let seconds = prompt.resolvedKind == .finished ? finishedTimeoutSeconds : timeoutSeconds
+        let waiter = Task { [queue] in
+            try await queue.enqueueWithTimeout(prompt, seconds: seconds)
         }
         Self.watchForHangup(conn) { waiter.cancel() }
         do {

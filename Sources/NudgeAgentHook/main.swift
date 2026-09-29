@@ -71,7 +71,7 @@ do {
 // with a reply box, and hold this hook until you answer. A reply answers the
 // Stop hook with "block", so Claude carries on with it; anything else lets
 // Claude stop as usual. The app lets go of it as soon as you switch back to
-// the session's terminal, and the queue gives up after five minutes.
+// the session's terminal, and gives up after ten minutes.
 // Every other event (twice per tool call) stops here, before any AppKit work.
 guard eventName == "Stop", event.subagentID == nil, prefs.finishedMessages else { exit(0) }
 

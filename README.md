@@ -63,7 +63,7 @@ In auto mode Claude asks less and runs longer, so the useful moment is when it's
 
 - Reply, and Claude carries on with it in the same session. Nudge answers Claude's Stop hook with your text, so this works in any terminal and in the Claude app, no tmux needed. (Claude's terminal labels the reply "Stop hook error". It isn't one.)
 - Dismiss it, and Claude stops as usual.
-- Go back to the terminal (or the Claude app, for its sessions) and Nudge lets go on its own, so the session is yours to type in. It also lets go after five minutes.
+- Go back to the terminal (or the Claude app, for its sessions) and Nudge lets go on its own, so the session is yours to type in. It also lets go after ten minutes, and a permission prompt from another session goes ahead of it.
 
 It works for Codex too, in the CLI and the ChatGPT app (see [Codex](#codex)). It never takes the keyboard from what you're typing: click the reply box to answer. It stays out of the way while you're at the session, for `claude -p`, `codex exec` and other scripts, and for subagents. Switch it off with "Tell me when Claude finishes".
 
@@ -183,7 +183,7 @@ If you allow a pattern prompt and an ask rule covers the same command, Claude as
 - **Answering in the terminal.** Esc or No there clears Nudge's copy right away. Yes clears it when the command finishes, because Claude doesn't tell hooks it was answered. For a slow command the prompt sits in the menu bar until then, and clicking it does nothing.
 - **Plan approvals and questions stay in the terminal.** Accepting a plan means choosing how Claude carries on, and a plain Allow can't say which.
 - **"Always allow" is for patterns.** Claude's own prompts get Allow, Deny, and allow for this session.
-- **FIFO queue, 5-minute timeout.** Stack up enough prompts and the oldest ones expire.
+- **FIFO queue, 5-minute timeout.** Stack up enough prompts and the oldest ones expire. Finished messages wait behind any prompt and last ten minutes.
 - **One Mac.** Patterns don't sync.
 
 ## Uninstall

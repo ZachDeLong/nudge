@@ -31,7 +31,16 @@ public actor PromptQueue {
                     cont.resume(throwing: QueueError.withdrawn)
                     return
                 }
-                pending.append(Pending(prompt: prompt, continuation: cont))
+                // A finished message can wait minutes for a reply. Anything
+                // else goes ahead of it, so another session isn't stuck
+                // behind it; the message comes back once that's answered.
+                let entry = Pending(prompt: prompt, continuation: cont)
+                if prompt.resolvedKind != .finished,
+                   let slot = pending.firstIndex(where: { $0.prompt.resolvedKind == .finished }) {
+                    pending.insert(entry, at: slot)
+                } else {
+                    pending.append(entry)
+                }
                 // Notify even when the head is unchanged: the depth moved, and
                 // the UI shows it (menu bar count, "N more" pill).
                 notifyHead()
