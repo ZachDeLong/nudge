@@ -672,6 +672,14 @@ expect(
 expect(HookAgent.from(arguments: ["nudge-hook"]), .claude, "protocol: no flag means Claude")
 expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "codex"]), .codex, "protocol: --agent codex")
 expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "Codex"]), .codex, "protocol: agent flag ignores case")
+
+func promptFrom(agent: String?) -> Prompt {
+    Prompt(id: "1", tool: "Computer", command: "type hi", cwd: "/", sessionId: "s", agent: agent)
+}
+expect(promptFrom(agent: nil).agentName, "Claude", "agentName: missing agent reads as Claude")
+expect(promptFrom(agent: "claude").agentName, "Claude", "agentName: claude")
+expect(promptFrom(agent: "codex").agentName, "Codex", "agentName: codex")
+expect(promptFrom(agent: "Astra").agentName, "Astra", "agentName: other agents show their own name")
 expect(HookAgent.from(arguments: ["nudge-hook", "--agent"]), .claude, "protocol: dangling flag falls back to Claude")
 expect(HookAgent.from(arguments: ["nudge-hook", "--agent", "cursor"]), .claude, "protocol: unknown agent falls back to Claude")
 expect(FrontmostApp.sessionUIBundleIDs(entrypoint: nil, agent: "codex").contains("com.openai.codex"), true, "protocol: ChatGPT/Codex app counts as the agent's own UI")

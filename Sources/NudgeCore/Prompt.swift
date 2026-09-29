@@ -79,8 +79,16 @@ public struct Prompt: Codable, Equatable, Identifiable {
     /// Raised by the agent's own approval prompt rather than a pattern.
     public var isPermissionRequest: Bool { event == "PermissionRequest" }
 
-    /// "Claude" or "Codex", for titles and notices.
-    public var agentName: String { agent == "codex" ? "Codex" : "Claude" }
+    /// "Claude" or "Codex", for titles and notices. Any other agent that
+    /// posts to the server (a computer-use harness, say) is shown by the
+    /// name it sends.
+    public var agentName: String {
+        switch agent {
+        case nil, "claude": return "Claude"
+        case "codex": return "Codex"
+        case let other?: return other
+        }
+    }
 }
 
 public enum Decision: String, Codable, Equatable {
