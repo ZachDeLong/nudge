@@ -36,7 +36,8 @@ chmod +x "$SETUP"/*.sh
 if [[ -n "${NUDGE_SIGN_IDENTITY:-}" ]]; then
     # Hardened runtime: without it the loader honours DYLD_INSERT_LIBRARIES,
     # so any process could start Nudge with its own code inside and borrow
-    # the Accessibility grant. Nudge needs no entitlements to run under it.
+    # the Accessibility grant. Its one entitlement lets "Go to" send Apple
+    # Events to the session's terminal.
     sign=(codesign --force --timestamp=none --options runtime --sign "$NUDGE_SIGN_IDENTITY")
     if [[ -n "${NUDGE_SIGN_KEYCHAIN:-}" ]]; then
         sign+=(--keychain "$NUDGE_SIGN_KEYCHAIN")
@@ -46,7 +47,7 @@ if [[ -n "${NUDGE_SIGN_IDENTITY:-}" ]]; then
         [[ "$bin" == Nudge ]] && continue
         "${sign[@]}" --identifier "com.zachdelong.Nudge.$bin" "$APP/Contents/MacOS/$bin"
     done
-    "${sign[@]}" "$APP"
+    "${sign[@]}" --entitlements "$ROOT/Nudge.entitlements" "$APP"
     codesign --verify --strict "$APP"
     echo "✓ Signed with \"$NUDGE_SIGN_IDENTITY\""
 fi

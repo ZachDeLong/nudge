@@ -10,6 +10,7 @@ struct PopoverView: View {
     let onSessionAllow: () -> Void
     let onSubmitText: (String) -> Void
     let onCancelAsk: () -> Void
+    let onJumpToSession: () -> Void
     let onTogglePause: () -> Void
     let onToggleSkipTerminal: () -> Void
     let onToggleGlobalKeys: () -> Void
@@ -171,7 +172,7 @@ struct PopoverView: View {
 
     @ViewBuilder
     private func finishedContent(for prompt: Prompt) -> some View {
-        header(prompt: prompt, title: "\(prompt.agentName) finished")
+        header(prompt: prompt, title: "\(prompt.agentName) finished", jumpTo: SessionJump.appName(for: prompt))
         AskBody(question: prompt.command, notice: state.notice, style: .finished, linkBase: prompt.cwd,
                 onSubmit: onSubmitText, onCancel: onCancelAsk)
     }
@@ -179,7 +180,7 @@ struct PopoverView: View {
     // MARK: - Shared header
 
     @ViewBuilder
-    private func header(prompt: Prompt, title: String) -> some View {
+    private func header(prompt: Prompt, title: String, jumpTo app: String? = nil) -> some View {
         HStack(spacing: 11) {
             ToolBadge(tool: prompt.tool)
             VStack(alignment: .leading, spacing: 2) {
@@ -194,6 +195,15 @@ struct PopoverView: View {
             Spacer(minLength: 8)
             if state.queueDepth > 1 {
                 QueuePill(waiting: state.queueDepth - 1)
+            }
+            if let app {
+                Button(action: onJumpToSession) {
+                    Label(app, systemImage: "arrow.up.forward.app")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Go to this session in \(app)")
             }
         }
         .padding(.bottom, 12)
@@ -766,6 +776,11 @@ private struct AskBody: View {
                 Group {
                     if let linkBase {
                         Text(LinkedMessage.render(question, cwd: linkBase))
+                            .environment(\.openURL, OpenURLAction { url in
+                                NSLog("Nudge: opening %@", url.absoluteString)
+                                NSWorkspace.shared.open(url)
+                                return .handled
+                            })
                     } else {
                         Text(question)
                     }

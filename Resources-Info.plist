@@ -12,6 +12,8 @@
     <string>Nudge</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Nudge brings a session's terminal tab to the front when you click Go to.</string>
     <key>CFBundleShortVersionString</key>
     <string>1.5.3</string>
     <key>CFBundleVersion</key>

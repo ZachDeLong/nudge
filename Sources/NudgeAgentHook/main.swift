@@ -97,7 +97,9 @@ let finished = Prompt(
     permissionMode: event.permissionMode,
     agent: event.agent,
     event: "Stop",
-    entrypoint: entrypoint
+    entrypoint: entrypoint,
+    hostApp: env["__CFBundleIdentifier"],
+    tty: ProcessTree.sessionTTY()
 )
 
 // If Claude gives up on the hook (you quit it), stop holding the message.

@@ -41,6 +41,11 @@ public struct Prompt: Codable, Equatable, Identifiable {
     /// "claude-desktop" in the Claude app. Tells the app which window shows
     /// this session.
     public let entrypoint: String?
+    /// Bundle id of the app the session runs in (its `__CFBundleIdentifier`:
+    /// com.mitchellh.ghostty, com.apple.Terminal, the Claude app…), and the
+    /// session's terminal device, so "Go to" can bring up its exact tab.
+    public let hostApp: String?
+    public let tty: String?
 
     public init(
         id: String,
@@ -56,7 +61,9 @@ public struct Prompt: Codable, Equatable, Identifiable {
         event: String? = nil,
         callKey: String? = nil,
         subagentId: String? = nil,
-        entrypoint: String? = nil
+        entrypoint: String? = nil,
+        hostApp: String? = nil,
+        tty: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -72,6 +79,8 @@ public struct Prompt: Codable, Equatable, Identifiable {
         self.callKey = callKey
         self.subagentId = subagentId
         self.entrypoint = entrypoint
+        self.hostApp = hostApp
+        self.tty = tty
     }
 
     public var resolvedKind: PromptKind { kind ?? .permission }

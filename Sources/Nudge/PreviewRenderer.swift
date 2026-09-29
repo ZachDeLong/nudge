@@ -179,7 +179,8 @@ enum PreviewRenderer {
             command: """
             Done. The demo is rendered to `Package.swift`'s folder as **Sources/Nudge/PreviewRenderer.swift** and the dev server is up at localhost:3000. Docs: https://github.com/ZachDeLong/nudge
             """,
-            cwd: FileManager.default.currentDirectoryPath, sessionId: "s", agent: "claude", entrypoint: "cli"
+            cwd: FileManager.default.currentDirectoryPath, sessionId: "s", agent: "claude", entrypoint: "cli",
+            hostApp: "com.apple.Terminal"
         )
 
         let emptyChat = AgentChatStore()
@@ -227,7 +228,7 @@ enum PreviewRenderer {
             return PopoverView(
                 state: state,
                 onAllow: {}, onDeny: {}, onAlwaysAllow: {}, onSessionAllow: {},
-                onSubmitText: { _ in }, onCancelAsk: {},
+                onSubmitText: { _ in }, onCancelAsk: {}, onJumpToSession: {},
                 onTogglePause: {}, onToggleSkipTerminal: {}, onToggleGlobalKeys: {}, onToggleFinishedMessages: {}, onQuit: {},
                 onEnableGlobalKeys: {},
                 agentChat: store,

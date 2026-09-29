@@ -36,6 +36,31 @@ public enum ProcessTree {
         return args
     }
 
+    /// The controlling terminal of `pid` ("/dev/ttys002"), or nil if it has
+    /// none or it can't be read.
+    public static func tty(of pid: pid_t) -> String? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        let dev = info.kp_eproc.e_tdev
+        guard dev != -1, let name = devname(dev, S_IFCHR) else { return nil }
+        let tty = String(cString: name)
+        return tty.hasPrefix("tty") ? "/dev/" + tty : nil
+    }
+
+    /// The terminal the agent that ran this hook is attached to: this
+    /// process's own, or the nearest ancestor's (a hook may run detached).
+    public static func sessionTTY(depth: Int = 4) -> String? {
+        var pid = getpid()
+        for _ in 0...depth where pid > 1 {
+            if let tty = tty(of: pid) { return tty }
+            guard let next = parent(of: pid) else { break }
+            pid = next
+        }
+        return nil
+    }
+
     /// `argv` of this process's ancestors, nearest first, up to `depth`.
     public static func ancestorArguments(depth: Int = 4) -> [[String]] {
         var result: [[String]] = []

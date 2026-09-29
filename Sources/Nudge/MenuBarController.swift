@@ -333,6 +333,7 @@ final class MenuBarController: NSObject {
             onSessionAllow: { [weak self] in self?.sessionAllowCurrent() },
             onSubmitText: { [weak self] text in self?.submitAskText(text) },
             onCancelAsk: { [weak self] in self?.resolve(.cancel) },
+            onJumpToSession: { [weak self] in self?.jumpToSession() },
             onTogglePause: { [weak self] in self?.togglePause() },
             onToggleSkipTerminal: { [weak self] in self?.toggleSkipTerminal() },
             onToggleGlobalKeys: { [weak self] in self?.toggleGlobalKeys() },
@@ -568,6 +569,14 @@ final class MenuBarController: NSObject {
         if prompt.resolvedKind == .permission {
             showNotice(decision == .allow ? .allowed : .denied)
         }
+    }
+
+    /// Brings up the session's own window. Once it's in front, the app-switch
+    /// observer lets the finished message go, so Claude stops as usual and
+    /// you carry on there.
+    private func jumpToSession() {
+        guard let prompt = currentPrompt else { return }
+        SessionJump.go(to: prompt)
     }
 
     private func submitAskText(_ text: String) {
