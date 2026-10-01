@@ -39,6 +39,17 @@ The cask is `nudge-app` because Homebrew's own `nudge` is a different app (MacAd
 
 You'll need macOS 14+. Agent sessions also need `tmux`.
 
+### Or as a Claude Code plugin
+
+Install the app the same way, skip `nudge-setup`, and add the hooks from inside Claude Code instead:
+
+```
+/plugin marketplace add ZachDeLong/nudge
+/plugin install nudge@nudge
+```
+
+The plugin covers Claude Code only (Codex still needs `nudge-setup`) and doesn't seed [patterns](#patterns). If you've already run `nudge-setup`, the plugin stays out of the way so nothing shows twice.
+
 <details>
 <summary>From source, or without Homebrew</summary>
 
