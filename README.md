@@ -2,6 +2,10 @@
 
 Answer Claude Code and Codex from whatever app you're in.
 
+![Claude finishes while a video plays. Nudge drops down from the menu bar, a reply goes back, then a git push prompt gets allowed with one click](./docs/img/demo.webp)
+
+<sub>Background: the <i>Sintel</i> trailer, © Blender Foundation, CC BY 3.0.</sub>
+
 Start Claude on something and go watch a video. When it finishes, a small panel drops down from the menu bar with Claude's last message and a reply box. Type what's next and Claude keeps going in the same session. The video keeps playing, and you don't have to go back to the terminal.
 
 The same panel handles permission prompts. When Claude stops to ask before running something (a `git push --force`, an edit to a config file), click Allow from wherever you are.
@@ -11,8 +15,6 @@ Nudge asks exactly when Claude Code would ask. If an allow rule or auto mode alr
 It's a quality-of-life tool, not a security tool. The terminal still works: answer there and Nudge's copy goes away.
 
 It works with [Codex](#codex) too, and with sessions in the Claude app's Code tab, since those run your `~/.claude` hooks. The app sandboxes most shell commands, so Claude asks less often there.
-
-![Nudge under its menu bar icon, showing Claude's last message with a reply typed in](./docs/img/finished.png)
 
 ## What's in the box
 
