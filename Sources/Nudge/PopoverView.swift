@@ -133,7 +133,7 @@ struct PopoverView: View {
             Button(action: onAllow) {
                 ButtonLabel(title: "Allow", key: keys ? "⏎" : nil, weight: .semibold, prominent: true)
             }
-            .buttonStyle(.borderedProminent)
+            .prominentDefault()
             .controlSize(.large)
 
             if offerOptions {
@@ -188,7 +188,7 @@ struct PopoverView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                Text("\(PromptCopy.toolLabel(prompt)) · \(PromptCopy.projectName(prompt))")
+                (PromptCopy.subtitleLead(prompt) + Text(" · \(PromptCopy.projectName(prompt))"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -391,6 +391,20 @@ enum PromptCopy {
     static func toolLabel(_ prompt: Prompt) -> String {
         if prompt.resolvedKind == .finished { return prompt.detail ?? "Done" }
         return prompt.tool == "apply_patch" ? "Patch" : prompt.tool
+    }
+
+    /// The subtitle before the project: the tool, or what a finished turn
+    /// did with its line counts colored like a diff ("4 files +120 −30 · 3m").
+    static func subtitleLead(_ prompt: Prompt) -> Text {
+        let label = toolLabel(prompt)
+        guard prompt.resolvedKind == .finished, prompt.detail != nil else { return Text(label) }
+        let words = label.split(separator: " ", omittingEmptySubsequences: false).map { word -> Text in
+            let isCount = word.dropFirst().first?.isNumber == true
+            if isCount, word.hasPrefix("+") { return Text(word).foregroundColor(.green) }
+            if isCount, word.hasPrefix("\u{2212}") { return Text(word).foregroundColor(.red) }
+            return Text(word)
+        }
+        return words.dropFirst().reduce(words.first ?? Text("")) { $0 + Text(" ") + $1 }
     }
 
     static func projectName(_ prompt: Prompt) -> String {
@@ -667,7 +681,7 @@ private struct AgentSessionsPanel: View {
                 Image(systemName: "paperplane.fill")
                     .font(.system(size: 12, weight: .semibold))
             }
-            .buttonStyle(.borderedProminent)
+            .prominentDefault()
             .controlSize(.large)
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .help("Send message")
@@ -750,7 +764,7 @@ private struct AskBody: View {
     /// takes focus; see PanelFocus.onClick.
     enum Style {
         case ask, finished
-        var placeholder: String { self == .ask ? "Type your answer…" : "Reply to keep it going…" }
+        var placeholder: String { self == .ask ? "Type your answer  ·  ⇧⏎ new line" : "Reply to keep it going  ·  ⇧⏎ new line" }
         var cancelTitle: String { self == .ask ? "Cancel" : "Dismiss" }
         var messageMaxHeight: CGFloat { self == .ask ? 120 : 160 }
         var focusOnAppear: Bool { self == .ask }
@@ -819,9 +833,6 @@ private struct AskBody: View {
                         submit()
                         return .handled
                     }
-                Text("⇧⏎ for a new line")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
             }
 
             // Buttons
@@ -841,7 +852,7 @@ private struct AskBody: View {
                         Button(action: submit) {
                             ButtonLabel(title: "Send", key: "⏎", weight: .semibold, prominent: true)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .prominentDefault()
                         .controlSize(.large)
                         .keyboardShortcut(.defaultAction)
                         .disabled(isEmpty)
@@ -914,6 +925,32 @@ private struct NoticeRow: View {
         }
         .frame(maxWidth: .infinity, minHeight: 28)
         .onAppear { bounced = true }
+    }
+}
+
+extension View {
+    /// The default action (Allow, Send) in the accent color. Nudge's panel
+    /// never becomes key, and AppKit draws `.borderedProminent` grey in an
+    /// inactive window, so it looked no different from Deny and Dismiss.
+    func prominentDefault() -> some View {
+        buttonStyle(DefaultActionStyle())
+    }
+}
+
+/// Sized like a large `.bordered` button so it sits level with its neighbor.
+private struct DefaultActionStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isEnabled ? Color.white : Color.secondary)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 28)
+            .background(
+                isEnabled ? Color.accentColor.opacity(configuration.isPressed ? 0.75 : 1) : Color.primary.opacity(0.1),
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+            .contentShape(Rectangle())
     }
 }
 
