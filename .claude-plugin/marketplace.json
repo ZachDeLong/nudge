@@ -1,0 +1,16 @@
+{
+  "name": "nudge",
+  "owner": {
+    "name": "Zach DeLong"
+  },
+  "metadata": {
+    "description": "Nudge: answer Claude Code from your Mac's menu bar."
+  },
+  "plugins": [
+    {
+      "name": "nudge",
+      "source": "./plugin",
+      "description": "Answer Claude Code's permission prompts, questions and finished messages from your Mac's menu bar."
+    }
+  ]
+}

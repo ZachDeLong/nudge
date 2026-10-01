@@ -1,0 +1,8 @@
+{
+  "name": "nudge",
+  "version": "0.1.0",
+  "description": "Answer Claude Code's permission prompts, questions and finished messages from your Mac's menu bar. Needs the Nudge app (macOS).",
+  "author": { "name": "Zach DeLong" },
+  "homepage": "https://github.com/ZachDeLong/nudge",
+  "license": "MIT"
+}

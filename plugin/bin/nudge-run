@@ -1,0 +1,20 @@
+#!/bin/sh
+# Runs one of Nudge.app's hook helpers for the plugin install.
+#
+# A quiet no-op when the app isn't installed, and when nudge-setup already
+# wired the same hooks into settings.json (both would fire, and
+# every prompt would show twice). NUDGE_PLUGIN_FORCE=1 skips that check
+# (testing the plugin on a machine that has both).
+
+app=/Applications/Nudge.app/Contents/MacOS
+bin="$app/$1"
+shift
+
+[ -x "$bin" ] || exit 0
+settings="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+if [ -z "${NUDGE_PLUGIN_FORCE:-}" ] && [ -f "$settings" ] && grep -q "$app/nudge-" "$settings"; then
+    exit 0
+fi
+
+# exec keeps Claude Code as the helper's parent, which CallerWatch relies on.
+exec "$bin" "$@"
