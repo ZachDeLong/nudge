@@ -386,9 +386,10 @@ enum PromptCopy {
         }).count
     }
 
-    /// Tool name for the subtitle. Codex's `apply_patch` reads as "Patch".
+    /// Tool name for the subtitle. Codex's `apply_patch` reads as "Patch"; a
+    /// finished message shows what the turn did ("4 files +120 −30 · 3m").
     static func toolLabel(_ prompt: Prompt) -> String {
-        if prompt.resolvedKind == .finished { return "Done" }
+        if prompt.resolvedKind == .finished { return prompt.detail ?? "Done" }
         return prompt.tool == "apply_patch" ? "Patch" : prompt.tool
     }
 

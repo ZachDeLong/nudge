@@ -1,0 +1,8 @@
+{"type": "user", "promptId": "p0", "message": {"role": "user", "content": "rename the helper"}}
+{"type": "user", "promptId": "p0", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}]}, "toolUseResult": {"filePath": "/Users/dev/code/api/src/old.ts", "structuredPatch": [{"oldStart": 1, "oldLines": 1, "newStart": 1, "newLines": 1, "lines": ["-a", "+b"]}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Renamed."}]}}
+{"type": "user", "promptId": "p1", "message": {"role": "user", "content": "fix the flaky login test"}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Looking."}]}}
+{"type": "user", "promptId": "p1", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}]}, "toolUseResult": {"filePath": "/Users/dev/code/api/test/login.test.ts", "structuredPatch": [{"oldStart": 10, "oldLines": 2, "newStart": 10, "newLines": 3, "lines": [" ctx", "-await sleep(100)", "-expect(x)", "+await waitFor(ready)", "+expect(x)"]}]}}
+{"type": "user", "promptId": "p1", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}]}, "toolUseResult": {"type": "update", "filePath": "/Users/dev/code/api/README.md", "content": "...", "structuredPatch": [{"oldStart": 40, "oldLines": 0, "newStart": 40, "newLines": 2, "lines": ["+", "+Login tests wait for the server."]}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Fixed the flaky login test and added a note to the README."}]}}

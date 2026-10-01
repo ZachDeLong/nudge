@@ -96,6 +96,8 @@ let finished = Prompt(
     sessionId: event.claudeSessionID ?? "unknown",
     permissionMode: event.permissionMode,
     agent: event.agent,
+    // "4 files +120 −30 · 3m". Claude's transcript only; Codex's differs.
+    detail: agent == .claude ? event.transcriptPath.flatMap { TurnSummary.read(transcriptAt: $0)?.text } : nil,
     event: "Stop",
     entrypoint: entrypoint,
     hostApp: env["__CFBundleIdentifier"],

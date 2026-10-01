@@ -210,13 +210,15 @@ func cpuSeconds(pid: pid_t) -> Double? {
 
 /// Reads a fixture payload: sent verbatim when it's a string (a recorded
 /// payload, byte for byte, or deliberately malformed input); re-serialized
-/// when it's an object.
+/// when it's an object, with "{fixtures}" in its strings made the fixtures
+/// folder's path (for a `transcript_path` the hook reads).
 func payloadData(_ value: Any?, _ what: String) throws -> Data {
     switch value {
     case let s as String:
         return Data(s.utf8)
     case let o as [String: Any]:
-        return try JSONSerialization.data(withJSONObject: o)
+        let fixtures = opts.fixturesDir.absoluteURL.standardizedFileURL.path
+        return try JSONSerialization.data(withJSONObject: substitute("{fixtures}", with: fixtures, in: o))
     default:
         throw FixtureError("\(what) must be an object or string")
     }

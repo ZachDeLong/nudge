@@ -179,7 +179,8 @@ enum PreviewRenderer {
             command: """
             Done. The demo is rendered to `Package.swift`'s folder as **Sources/Nudge/PreviewRenderer.swift** and the dev server is up at localhost:3000. Docs: https://github.com/ZachDeLong/nudge
             """,
-            cwd: FileManager.default.currentDirectoryPath, sessionId: "s", agent: "claude", entrypoint: "cli",
+            cwd: FileManager.default.currentDirectoryPath, sessionId: "s", agent: "claude",
+            detail: "4 files +120 \u{2212}30 · 3m", entrypoint: "cli",
             hostApp: "com.apple.Terminal"
         )
 

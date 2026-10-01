@@ -1499,6 +1499,84 @@ expect(linkTargets("Wrote `demo.mp4`"), ["/work/app/demo.mp4"], "links: inside b
 expect(linkTargets("Missing gone.mp4 and e.g. this"), [], "links: missing files and abbreviations stay plain")
 expect(linkTargets("Fetched https://cdn.example.com/demo.mp4"), ["https://cdn.example.com/demo.mp4"], "links: a URL isn't also a file")
 
+// MARK: TurnSummary (finished panel subtitle)
+
+do {
+    let t0 = "2026-10-01T12:00:00.000Z"
+    let now = ISO8601DateFormatter().date(from: "2026-10-01T12:03:10Z")!
+    func line(_ object: [String: Any]) -> String {
+        String(data: try! JSONSerialization.data(withJSONObject: object), encoding: .utf8)!
+    }
+    func prompt(_ text: String, _ id: String, at time: String = t0, meta: Bool = false) -> String {
+        var entry: [String: Any] = ["type": "user", "promptId": id, "timestamp": time,
+                                    "message": ["role": "user", "content": text]]
+        if meta { entry["isMeta"] = true }
+        return line(entry)
+    }
+    func edit(_ path: String, _ lines: [String], _ id: String) -> String {
+        line(["type": "user", "promptId": id, "timestamp": t0,
+              "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "t", "content": "ok"]]],
+              "toolUseResult": ["filePath": path, "structuredPatch": [["oldStart": 1, "lines": lines]]]])
+    }
+    func create(_ path: String, _ content: String, _ id: String) -> String {
+        line(["type": "user", "promptId": id, "timestamp": t0,
+              "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "t", "content": "ok"]]],
+              "toolUseResult": ["type": "create", "filePath": path, "content": content, "structuredPatch": []]])
+    }
+    let assistant = line(["type": "assistant", "message": ["role": "assistant", "content": [["type": "text", "text": "Done."]]]])
+    func summary(_ lines: [String], partial: Bool = false) -> TurnSummary? {
+        TurnSummary.summarize(transcript: Data(lines.joined(separator: "\n").utf8), now: now, isPartial: partial)
+    }
+
+    let turn = [
+        prompt("old turn", "p0"), edit("/a/old.swift", ["+x"], "p0"), assistant,
+        prompt("fix the login test", "p1"), assistant,
+        edit("/a/login.swift", [" ctx", "-old", "+new", "+more"], "p1"),
+        edit("/a/login.swift", ["-gone"], "p1"),
+        create("/a/new.md", "one\ntwo\nthree\n", "p1"),
+        assistant,
+    ]
+    expect(summary(turn), TurnSummary(files: 2, added: 5, removed: 2, seconds: 190), "summary: this turn's edits only, per file")
+    expect(summary(turn)?.text, "2 files +5 \u{2212}2 · 3m", "summary: text")
+
+    // A reply from Nudge keeps the promptId; the summary starts there.
+    let replied = turn + [
+        prompt("Stop hook feedback: The user replied from Nudge: now the docs", "p1", at: "2026-10-01T12:02:30.000Z", meta: true),
+        edit("/a/README.md", ["+docs"], "p1"), assistant,
+    ]
+    expect(summary(replied), TurnSummary(files: 1, added: 1, removed: 0, seconds: 40), "summary: from a Nudge reply on")
+    expect(summary(replied)?.text, "1 file +1 · 40s", "summary: one file")
+
+    // Text injected mid-turn (a skill's body) doesn't restart it.
+    let skill = [prompt("do it", "p1"), prompt("Base directory for this skill: ...", "p1", at: "2026-10-01T12:02:00.000Z", meta: true),
+                 edit("/a/x.swift", ["+y"], "p1")]
+    expect(summary(skill)?.seconds, 190, "summary: meta text mid-turn isn't a start")
+
+    // Another session's message opens its own turn (isMeta, new promptId).
+    let peer = [prompt("first", "p1"), edit("/a/x.swift", ["+y"], "p1"),
+                prompt("Another Claude session sent a message: ...", "p2", at: "2026-10-01T12:03:00.000Z", meta: true), assistant]
+    expect(summary(peer), TurnSummary(files: 0, added: 0, removed: 0, seconds: 10), "summary: a peer message's turn")
+    expect(summary(peer)?.text, "Done in 10s", "summary: nothing edited")
+
+    // Older transcripts have no promptId: back to the last real prompt.
+    let old = [line(["type": "user", "timestamp": t0, "message": ["role": "user", "content": "go"]]),
+               line(["type": "user", "timestamp": t0, "toolUseResult": ["filePath": "/a/z", "structuredPatch": [["lines": ["-a", "-b"]]]],
+                     "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": "t"]]]])]
+    expect(summary(old)?.text, "1 file \u{2212}2 · 3m", "summary: no promptId")
+
+    // A cut first line (tail read) is dropped, not misread.
+    expect(summary(["{\"type\":\"user\",\"promptId\":\"p9\",\"mess"] + turn, partial: true)?.files, 2, "summary: cut first line dropped")
+    expectNil(summary([]), "summary: empty transcript")
+    expectNil(summary([assistant]), "summary: no turn found")
+
+    expect(TurnSummary.duration(42), "42s", "summary: seconds")
+    expect(TurnSummary.duration(3599), "59m", "summary: minutes")
+    expect(TurnSummary.duration(3600), "1h", "summary: hours")
+    expect(TurnSummary.duration(3900), "1h 5m", "summary: hours and minutes")
+    expect(TurnSummary(files: 3, added: 0, removed: 0, seconds: nil).text, "3 files", "summary: no time, no counts")
+    expectNil(TurnSummary(files: 0, added: 0, removed: 0, seconds: nil).text, "summary: nothing to say")
+}
+
 print("\(passed) passed, \(failures.count) failed")
 for failure in failures {
     print(failure)

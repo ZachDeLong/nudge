@@ -1,0 +1,30 @@
+{
+  "description": "A finished message says what the turn did: files edited and lines added/removed since your last message, in the subtitle (read from transcript_path; this transcript has no timestamps, so no duration)",
+  "patterns": [],
+  "hook": "nudge-agent-hook",
+  "env": {
+    "CLAUDE_CODE_ENTRYPOINT": "cli",
+    "NUDGE_TEST_FRONTMOST": "com.google.Chrome"
+  },
+  "payload": {
+    "session_id": "5c1b2f7e-9a44-4d1e-b8a1-3e2f6c0d9b17",
+    "transcript_path": "{fixtures}/transcripts/finished-summary.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "auto",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "Fixed the flaky login test and added a note to the README."
+  },
+  "expectPrompt": {
+    "kind": "finished",
+    "tool": "Stop",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "5c1b2f7e-9a44-4d1e-b8a1-3e2f6c0d9b17",
+    "command": "Fixed the flaky login test and added a note to the README.",
+    "event": "Stop",
+    "entrypoint": "cli",
+    "detail": "2 files +4 −2"
+  },
+  "respond": "cancel",
+  "expectExit": 0
+}
