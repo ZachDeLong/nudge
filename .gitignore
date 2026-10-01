@@ -13,3 +13,6 @@ DerivedData/
 
 
 release-tmp/
+
+# Types Claude Code writes for the plugin (tsc -p plugin)
+plugin/.claude-plugin/types/
