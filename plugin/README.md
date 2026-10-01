@@ -17,6 +17,6 @@ Then, in Claude Code:
 
 Without the app, the hooks do nothing and Claude Code asks in the terminal as usual. If you already connected Nudge with `nudge-setup`, the plugin stays out of the way so nothing shows twice. Codex support comes from `nudge-setup`, not this plugin.
 
-Everything runs on your Mac: the hooks talk to the Nudge app over localhost, and nothing is sent anywhere else.
+Everything runs on your Mac: the hooks talk to the Nudge app over a local port, and nothing is sent anywhere else. See the [privacy policy](https://github.com/ZachDeLong/nudge/blob/main/PRIVACY.md).
 
 Source, settings and docs: https://github.com/ZachDeLong/nudge
