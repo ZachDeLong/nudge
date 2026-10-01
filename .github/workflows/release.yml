@@ -73,7 +73,7 @@ jobs:
           codesign -dv .build/release/Nudge.app 2>&1 | grep -q 'flags=.*runtime' \
             || { echo "::error::Nudge.app isn't signed with the hardened runtime"; exit 1; }
 
-      - name: Verify Info.plist version matches tag
+      - name: Verify Info.plist and plugin versions match tag
         run: |
           PLIST="Resources-Info.plist"
           PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
@@ -81,6 +81,11 @@ jobs:
           TAG_VERSION="${TAG#v}"
           if [[ "$PLIST_VERSION" != "$TAG_VERSION" ]]; then
             echo "::error::Tag $TAG (-> $TAG_VERSION) doesn't match Info.plist version $PLIST_VERSION"
+            exit 1
+          fi
+          PLUGIN_VERSION=$(jq -r .version plugin/.claude-plugin/plugin.json)
+          if [[ "$PLUGIN_VERSION" != "$TAG_VERSION" ]]; then
+            echo "::error::Tag $TAG (-> $TAG_VERSION) doesn't match plugin/.claude-plugin/plugin.json version $PLUGIN_VERSION"
             exit 1
           fi
           echo "Version OK: $PLIST_VERSION"

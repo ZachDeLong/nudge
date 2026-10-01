@@ -33,6 +33,7 @@ jobs:
         run: |
           ./Tests/install/claude-hook-test.sh
           ./Tests/install/codex-hook-test.sh
+          ./Tests/install/plugin-run-test.sh
 
       # Layer 1: recorded hook payloads through the real nudge-hook into a
       # real, isolated Nudge (its own temp config dir, port and token),
@@ -95,4 +96,4 @@ jobs:
       - name: Install shellcheck
         run: brew install shellcheck
       - name: Lint scripts
-        run: shellcheck --severity=warning scripts/*.sh install.sh
+        run: shellcheck --severity=warning scripts/*.sh install.sh plugin/bin/nudge-run
