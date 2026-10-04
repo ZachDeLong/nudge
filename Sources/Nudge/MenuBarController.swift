@@ -26,6 +26,12 @@ final class MenuBarController: NSObject {
     private var queueDepth: Int { store.queueDepth }
     private var noticeTask: Task<Void, Never>?
     private var deferredHead: (prompt: Prompt?, depth: Int)?
+    /// The panel is fading out with its last content; queue changes wait for
+    /// the fade to finish. See `closePanel()`.
+    private var isClosing = false
+    /// A prompt dismissed from the panel (Dismiss, Cancel), which puts up no
+    /// notice. Its leaving the queue is our doing, not a withdrawal.
+    private var dismissedID: String?
     private var agentRefreshTimer: Timer?
     private var agentRefreshSequence: Int = 0
     private var keyMonitor: Any?
@@ -417,13 +423,30 @@ final class MenuBarController: NSObject {
         }
     }
 
-    private func dismissPanel() {
+    private func dismissPanel(then completion: (() -> Void)? = nil) {
         stopClickMonitor()
         stopIdleKeyMonitor()
         stopPulse()
         stopAgentRefresh()
         statusItem.button?.highlight(false)
-        panel.hide()
+        panel.hide(completion: completion)
+    }
+
+    /// Fades the panel out as it stands, notice and all, and applies whatever
+    /// the queue moved to once it's gone. Changing the content first would
+    /// show the old buttons, or the idle view, through the fade.
+    private func closePanel() {
+        isClosing = true
+        stopKeyMonitor()
+        dismissPanel { [weak self] in
+            guard let self else { return }
+            self.isClosing = false
+            self.store.notice = nil
+            if let next = self.deferredHead {
+                self.deferredHead = nil
+                self.applyHead(prompt: next.prompt, depth: next.depth)
+            }
+        }
     }
 
     private func startAgentRefresh() {
@@ -459,21 +482,32 @@ final class MenuBarController: NSObject {
             return
         }
 
-        // A decision notice is on screen: hold the next state until it has
-        // had its beat. Only the latest head matters when it ends.
-        if store.notice != nil {
+        // A decision notice is on screen, or the panel is fading out: hold
+        // the next state until that's done. Only the latest head matters.
+        if store.notice != nil || isClosing {
             deferredHead = (prompt, depth)
+            // The notice's beat already ran out waiting for this.
+            if !isClosing, noticeTask == nil { endNotice() }
             return
         }
 
-        // The head only moves when it leaves the queue, and our own decisions
-        // put up a notice first (handled above). So a visible prompt replaced
-        // here left without a click: its hook was killed or it timed out.
-        // Say so instead of letting it vanish mid-read.
         if panel.isVisible, let shown = store.prompt, shown.id != prompt?.id {
-            deferredHead = (prompt, depth)
-            showNotice(.withdrawn(agent: shown.agentName))
-            return
+            // Dismissed from the panel: close, or move on to the next prompt.
+            if shown.id == dismissedID {
+                dismissedID = nil
+                if prompt == nil {
+                    deferredHead = (prompt, depth)
+                    closePanel()
+                    return
+                }
+            } else {
+                // Our other answers put up a notice first (handled above), so
+                // this one left without a click: its hook was killed or it
+                // timed out. Say so instead of letting it vanish mid-read.
+                deferredHead = (prompt, depth)
+                showNotice(.withdrawn(agent: shown.agentName))
+                return
+            }
         }
         applyHead(prompt: prompt, depth: depth)
     }
@@ -563,11 +597,13 @@ final class MenuBarController: NSObject {
     /// While a notice is showing the decision has already gone out, so a
     /// second Enter or click is dropped rather than re-sent.
     private func resolve(_ decision: Decision) {
-        guard store.notice == nil, let prompt = currentPrompt else { return }
+        guard store.notice == nil, !isClosing, let prompt = currentPrompt else { return }
         let id = prompt.id
         Task { await queue.resolve(id: id, with: decision) }
         if prompt.resolvedKind == .permission {
             showNotice(decision == .allow ? .allowed : .denied)
+        } else {
+            dismissedID = id
         }
     }
 
@@ -580,7 +616,7 @@ final class MenuBarController: NSObject {
     }
 
     private func submitAskText(_ text: String) {
-        guard store.notice == nil, let id = currentPrompt?.id else { return }
+        guard store.notice == nil, !isClosing, let id = currentPrompt?.id else { return }
         let response = DecisionResponse(decision: .text, text: text)
         Task { await queue.resolve(id: id, with: response) }
         showNotice(.sent)
@@ -607,11 +643,17 @@ final class MenuBarController: NSObject {
 
     private func endNotice() {
         noticeTask = nil
-        store.notice = nil
-        if let next = deferredHead {
-            deferredHead = nil
-            applyHead(prompt: next.prompt, depth: next.depth)
+        // The queue hasn't moved yet. Keep the notice up rather than flash
+        // the answered prompt's buttons; handleHead ends it when it moves.
+        guard let next = deferredHead else { return }
+        // Nothing left to show: fade out on the notice.
+        if next.prompt == nil, panel.isVisible {
+            closePanel()
+            return
         }
+        deferredHead = nil
+        store.notice = nil
+        applyHead(prompt: next.prompt, depth: next.depth)
     }
 
     private func alwaysAllowCurrent() {
@@ -893,6 +935,9 @@ private final class KeyablePanel: NSPanel {
 final class PromptPanel {
     private let panel: NSPanel
     private let hosting: NSHostingController<AnyView>
+    /// Bumped by every show(), so a fade-out that a show() interrupted
+    /// doesn't order the re-shown panel out when it completes.
+    private var showCount = 0
 
     var isVisible: Bool { panel.isVisible }
     var isKey: Bool { panel.isKeyWindow }
@@ -1005,6 +1050,7 @@ final class PromptPanel {
         // command box / queue badge is showing.
         let size = fittingContentSize()
         panel.setContentSize(size)
+        showCount += 1
 
         let finalOrigin = computeOrigin(anchorTo: button)
 
@@ -1038,15 +1084,24 @@ final class PromptPanel {
         )
     }
 
-    func hide() {
-        guard panel.isVisible else { return }
+    /// Fades the panel out. `completion` runs once it's gone (right away if it
+    /// already was), which is when content can change without being seen.
+    func hide(completion: (() -> Void)? = nil) {
+        guard panel.isVisible else { completion?(); return }
+        let shown = showCount
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.12
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
-            self?.panel.orderOut(nil)
-            self?.panel.alphaValue = 1
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.showCount == shown {
+                    self.panel.orderOut(nil)
+                    self.panel.alphaValue = 1
+                }
+                completion?()
+            }
         })
     }
 
