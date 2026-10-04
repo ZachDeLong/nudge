@@ -74,7 +74,7 @@ Releases are signed with a self-signed certificate, not an Apple one. Gatekeeper
 
 In auto mode Claude asks less and runs longer, so the useful moment is when it's done. If Claude finishes while you're off in another app, Nudge pops up its last message with a reply box:
 
-- Reply, and Claude carries on with it in the same session. Nudge answers Claude's Stop hook with your text, so this works in any terminal and in the Claude app, no tmux needed. (Claude's terminal labels the reply "Stop hook error". It isn't one.)
+- Reply, and Claude carries on with it in the same session. Nudge answers Claude's Stop hook with your text, so this works in any terminal and in the Claude app, no tmux needed. (Claude's terminal shows it as "Stop hook feedback". Before Claude Code 2.1.163 it said "Stop hook error", which it isn't.)
 - The line under the title says what the turn did since your last message, like "4 files +120 −30 · 3m" (Claude Code only).
 - Dismiss it, and Claude stops as usual.
 - Go back to the terminal (or the Claude app, for its sessions) and Nudge lets go on its own, so the session is yours to type in. It also lets go after ten minutes, and a permission prompt from another session goes ahead of it.

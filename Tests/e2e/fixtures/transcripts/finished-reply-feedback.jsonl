@@ -1,0 +1,2 @@
+{"type": "user", "promptId": "p1", "version": "2.1.289", "message": {"role": "user", "content": "push the fix"}}
+{"type": "assistant", "version": "2.1.289", "message": {"role": "assistant", "content": [{"type": "text", "text": "Pushed the fix to origin/main. CI is running."}]}}

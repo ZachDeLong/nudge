@@ -69,7 +69,7 @@ do {
 
 // When Claude finishes while you're off in another app, show its last message
 // with a reply box, and hold this hook until you answer. A reply answers the
-// Stop hook with "block", so Claude carries on with it; anything else lets
+// Stop hook so Claude carries on with it (stopReplyOutput); anything else lets
 // Claude stop as usual. The app lets go of it as soon as you switch back to
 // the session's terminal, and gives up after ten minutes.
 // Every other event (twice per tool call) stops here, before any AppKit work.
@@ -112,7 +112,9 @@ guard let reply = try? NudgeClient.postPrompt(finished, to: "/prompt", port: por
       let text = reply.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
     exit(0)
 }
-writeHookOutput(stopReplyOutput(reply: text))
+let asFeedback = agent == .claude
+    && claudeTakesStopFeedback(version: event.transcriptPath.flatMap(claudeCodeVersion(transcriptAt:)))
+writeHookOutput(stopReplyOutput(reply: text, asFeedback: asFeedback))
 exit(0)
 
 private func string(_ value: Any?) -> String? {
