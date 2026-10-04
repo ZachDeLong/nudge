@@ -149,11 +149,44 @@ public func finishedMessageText(_ lastAssistantMessage: String?, agent: HookAgen
     return text.count > 4000 ? String(text.prefix(4000)) + "…" : text
 }
 
-/// Answers the Stop hook with your reply. "block" means Claude doesn't stop:
-/// it reads the reason as its next instruction and carries on in the same
-/// session (checked on Claude Code 2.1.283).
-public func stopReplyOutput(reply: String) -> [String: Any] {
-    ["decision": "block", "reason": "The user replied from Nudge: \(reply)"]
+/// Answers the Stop hook with your reply, so Claude doesn't stop: it takes
+/// the reply as its next instruction and carries on in the same session.
+/// `asFeedback` sends it as Stop `additionalContext`, which Claude Code shows
+/// as "Stop hook feedback" (checked on 2.1.289). Otherwise it's a "block",
+/// which works the same but shows as "Stop hook error"; Codex and Claude Code
+/// before 2.1.163 only take that.
+public func stopReplyOutput(reply: String, asFeedback: Bool) -> [String: Any] {
+    // TurnSummary finds your reply in the transcript by this prefix.
+    let text = "The user replied from Nudge: \(reply)"
+    guard asFeedback else { return ["decision": "block", "reason": text] }
+    return ["hookSpecificOutput": ["hookEventName": "Stop", "additionalContext": text]]
+}
+
+/// Whether Claude Code at `version` ("2.1.289") takes Stop `additionalContext`,
+/// which it has since 2.1.163. An unknown version gets the older answer.
+public func claudeTakesStopFeedback(version: String?) -> Bool {
+    guard let version else { return false }
+    let parts = version.split(separator: ".").map { Int($0.prefix(while: \.isNumber)) }
+    guard parts.count >= 3, let major = parts[0], let minor = parts[1], let patch = parts[2] else { return false }
+    return [major, minor, patch].lexicographicallyPrecedes([2, 1, 163]) == false
+}
+
+/// The Claude Code version that wrote the transcript at `path`, from the newest
+/// entry that records one (every message does). Only the tail is read.
+public func claudeCodeVersion(transcriptAt path: String) -> String? {
+    guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+    defer { try? handle.close() }
+    guard let size = try? handle.seekToEnd() else { return nil }
+    let tail: UInt64 = 256 << 10
+    guard (try? handle.seek(toOffset: size > tail ? size - tail : 0)) != nil,
+          let data = try? handle.readToEnd() else { return nil }
+    for line in data.split(separator: UInt8(ascii: "\n")).reversed() {
+        if let entry = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+           let version = entry["version"] as? String {
+            return version
+        }
+    }
+    return nil
 }
 
 /// A pattern matched while you're looking at the agent's own UI: have Claude

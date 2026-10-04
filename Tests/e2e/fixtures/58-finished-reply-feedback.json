@@ -1,5 +1,5 @@
 {
-  "description": "Claude finishes while you're in another app: Nudge shows its last message, and a reply keeps the session going (Stop answered with block + your reply, since the Claude Code version is unknown)",
+  "description": "Claude Code 2.1.163+ finishes while you're in another app: a reply from Nudge keeps it going as Stop feedback (additionalContext), not a block that shows as \"Stop hook error\"",
   "patterns": [],
   "hook": "nudge-agent-hook",
   "env": {
@@ -8,7 +8,7 @@
   },
   "payload": {
     "session_id": "5c1b2f7e-9a44-4d1e-b8a1-3e2f6c0d9b17",
-    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/5c1b2f7e-9a44-4d1e-b8a1-3e2f6c0d9b17.jsonl",
+    "transcript_path": "{fixtures}/transcripts/finished-reply-feedback.jsonl",
     "cwd": "/Users/dev/code/api",
     "permission_mode": "auto",
     "hook_event_name": "Stop",
@@ -27,8 +27,10 @@
   "respond": "text",
   "replyText": "now open a PR for it",
   "expectStdout": {
-    "decision": "block",
-    "reason": "The user replied from Nudge: now open a PR for it"
+    "hookSpecificOutput": {
+      "hookEventName": "Stop",
+      "additionalContext": "The user replied from Nudge: now open a PR for it"
+    }
   },
   "expectExit": 0
 }

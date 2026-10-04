@@ -701,8 +701,33 @@ expect(finishedMessageText("  Pushed to origin/main.\n", agent: .claude), "Pushe
 expect(finishedMessageText(nil, agent: .claude), "Claude finished its turn.", "finished: no message still says something")
 expect(finishedMessageText(nil, agent: .codex), "Codex finished its turn.", "finished: named for the agent")
 expect(finishedMessageText(String(repeating: "a", count: 5000), agent: .claude).count, 4001, "finished: long messages capped")
-expect(stopReplyOutput(reply: "now open a PR")["decision"] as? String, "block", "finished: a reply keeps Claude going")
-expect(stopReplyOutput(reply: "now open a PR")["reason"] as? String, "The user replied from Nudge: now open a PR", "finished: the reply reaches Claude as its reason")
+expect(stopReplyOutput(reply: "now open a PR", asFeedback: false)["decision"] as? String, "block", "finished: a reply keeps Claude going")
+expect(stopReplyOutput(reply: "now open a PR", asFeedback: false)["reason"] as? String, "The user replied from Nudge: now open a PR", "finished: the reply reaches Claude as its reason")
+do {
+    let out = stopReplyOutput(reply: "now open a PR", asFeedback: true)
+    let specific = out["hookSpecificOutput"] as? [String: String]
+    expect(out["decision"] == nil, true, "finished: feedback isn't a block (no \"Stop hook error\")")
+    expect(specific?["hookEventName"], "Stop", "finished: feedback answers Stop")
+    expect(specific?["additionalContext"], "The user replied from Nudge: now open a PR", "finished: the reply reaches Claude as feedback")
+}
+expect(claudeTakesStopFeedback(version: "2.1.289"), true, "finished: feedback on current Claude Code")
+expect(claudeTakesStopFeedback(version: "2.1.163"), true, "finished: feedback from 2.1.163")
+expect(claudeTakesStopFeedback(version: "2.1.162"), false, "finished: block before 2.1.163")
+expect(claudeTakesStopFeedback(version: "2.0.999"), false, "finished: block on 2.0")
+expect(claudeTakesStopFeedback(version: "3.0.0"), true, "finished: feedback on a later major")
+expect(claudeTakesStopFeedback(version: "2.2.0-beta.1"), true, "finished: prerelease suffix ignored")
+expect(claudeTakesStopFeedback(version: nil), false, "finished: unknown version gets block")
+expect(claudeTakesStopFeedback(version: "garbage"), false, "finished: unparseable version gets block")
+do {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nudge-version-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let file = dir.appendingPathComponent("t.jsonl")
+    let lines = [#"{"type":"user","version":"2.1.150"}"#, #"{"type":"assistant","version":"2.1.289"}"#, #"{"type":"cost-state"}"#, "{\"cut"]
+    try? lines.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
+    expect(claudeCodeVersion(transcriptAt: file.path), "2.1.289", "finished: version from the newest entry that has one")
+    expect(claudeCodeVersion(transcriptAt: dir.appendingPathComponent("missing.jsonl").path), nil, "finished: no transcript, no version")
+}
 
 do {
     let out = askInAgentUIOutput(pattern: "Bash(git push:*)")["hookSpecificOutput"] as? [String: String]
@@ -1546,6 +1571,15 @@ do {
     ]
     expect(summary(replied), TurnSummary(files: 1, added: 1, removed: 0, seconds: 40), "summary: from a Nudge reply on")
     expect(summary(replied)?.text, "1 file +1 · 40s", "summary: one file")
+
+    // On newer Claude Code the reply is a Stop additionalContext attachment,
+    // with no promptId; the summary starts there too.
+    let feedback = #"{"type":"attachment","timestamp":"2026-10-01T12:02:30.000Z","attachment":{"type":"hook_additional_context","hookEvent":"Stop","hookName":"Stop","content":["The user replied from Nudge: now the docs"]}}"#
+    let repliedAsFeedback = turn + [feedback, edit("/a/README.md", ["+docs"], "p1"), assistant]
+    expect(summary(repliedAsFeedback), TurnSummary(files: 1, added: 1, removed: 0, seconds: 40), "summary: from a Nudge feedback reply on")
+    // Another Stop hook's context isn't your reply.
+    let otherContext = feedback.replacingOccurrences(of: "The user replied from Nudge: now the docs", with: "Build is green")
+    expect(summary(turn + [otherContext, edit("/a/README.md", ["+docs"], "p1"), assistant])?.files, 3, "summary: other Stop context isn't a start")
 
     // Text injected mid-turn (a skill's body) doesn't restart it.
     let skill = [prompt("do it", "p1"), prompt("Base directory for this skill: ...", "p1", at: "2026-10-01T12:02:00.000Z", meta: true),

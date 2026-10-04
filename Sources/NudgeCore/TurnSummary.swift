@@ -6,7 +6,8 @@ import Foundation
 /// `transcript_path`.
 ///
 /// The turn runs from your last message to now: the prompt, or your reply from
-/// Nudge (a "Stop hook feedback" entry, which keeps the prompt's `promptId`),
+/// Nudge (a "Stop hook feedback" entry, which keeps the prompt's `promptId`,
+/// or on newer Claude Code a Stop `hook_additional_context` attachment),
 /// whichever came last. Other entries sharing the `promptId` that carry text
 /// (skill bodies and the like, marked `isMeta`) don't restart it. Edits are
 /// Edit/MultiEdit/Write results: each carries `filePath`, plus a
@@ -55,6 +56,11 @@ public struct TurnSummary: Equatable {
             guard let entry = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
             if let id = entry["promptId"] as? String {
                 if promptID == nil { promptID = id } else if id != promptID { foundStart = true; break }
+            }
+            if isNudgeFeedback(entry) {
+                startedAt = timestamp(entry)
+                foundStart = true
+                break
             }
             guard entry["type"] as? String == "user" else { continue }
             if let result = entry["toolUseResult"] as? [String: Any] {
@@ -113,6 +119,18 @@ public struct TurnSummary: Equatable {
         let minutes = seconds / 60
         if minutes < 60 { return "\(minutes)m" }
         return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
+    }
+
+    /// Your reply from Nudge sent as Stop feedback (Claude Code 2.1.163+): an
+    /// attachment with no `promptId`, unlike the "Stop hook feedback" message
+    /// a "block" reply leaves.
+    private static func isNudgeFeedback(_ entry: [String: Any]) -> Bool {
+        guard entry["type"] as? String == "attachment",
+              let attachment = entry["attachment"] as? [String: Any],
+              attachment["type"] as? String == "hook_additional_context",
+              attachment["hookEvent"] as? String == "Stop",
+              let content = attachment["content"] as? [String] else { return false }
+        return content.contains { $0.hasPrefix("The user replied from Nudge:") }
     }
 
     private static func userText(_ entry: [String: Any]) -> String? {
