@@ -104,6 +104,8 @@ A few things work differently from Claude Code:
 
 Patterns are for things you want to be asked about even when Claude wouldn't ask, like a command you've allow-listed. They live in `~/.config/nudge/patterns.txt`, one rule per line, and edits apply immediately. An empty file is fine: Nudge still shows Claude's own prompts.
 
+If Nudge can't get an answer for a match (the app isn't running, the prompt times out, or you pause Nudge while it's up), Claude asks in the terminal instead, so the match doesn't run unasked. While Nudge is paused, patterns are off.
+
 Patterns stay quiet in auto mode, where you've handed the calls to Claude. To be asked about something there anyway, add it to `permissions.ask` in `~/.claude/settings.json` (or tell Claude to add it). Claude asks about those in every mode, auto included, and Nudge shows the prompt.
 
 ```

@@ -1,0 +1,42 @@
+{
+  "description": "a pattern match nobody answers in time: the hook gives up with ask and a note, so Claude asks instead of running it unasked",
+  "patterns": [
+    "Bash(git push:*)"
+  ],
+  "env": {
+    "NUDGE_HOOK_MAX_WAIT": "1"
+  },
+  "payload": {
+    "session_id": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "transcript_path": "/Users/dev/.claude/projects/-Users-dev-code-api/3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90.jsonl",
+    "cwd": "/Users/dev/code/api",
+    "permission_mode": "default",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "git push origin main",
+      "description": "Push main to origin"
+    },
+    "tool_use_id": "toolu_01A1b2C3d4E5f6G7h8J9k0"
+  },
+  "expectPrompt": {
+    "kind": null,
+    "tool": "Bash",
+    "cwd": "/Users/dev/code/api",
+    "sessionId": "3f6c1e0a-5b7d-4a2e-9c41-8d2f6b1e7a90",
+    "permissionMode": "default",
+    "command": "git push origin main",
+    "matchedPattern": "Bash(git push:*)"
+  },
+  "respond": "wait",
+  "waitSeconds": 8,
+  "expectStdout": {
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "ask",
+      "permissionDecisionReason": "Nudge: this matches Bash(git push:*)."
+    },
+    "systemMessage": "Nudge got no answer in 1 second, so Claude is asking here instead."
+  },
+  "expectExit": 0
+}
