@@ -6,10 +6,13 @@ import NudgeHookCore
 // NUDGE_CONFIG_DIR is for the test harness. Left exported in a shell, it
 // points the hook at a Nudge that isn't there and prompting silently stops;
 // say so in Claude Code instead (systemMessage is shown to the user).
-func exitWithConfigDirWarning(_ problem: String) -> Never {
-    let message = "Nudge is off for this session: NUDGE_CONFIG_DIR is set to \(ConfigDir.url.path), \(problem). "
+func configDirWarning(_ problem: String) -> String {
+    "Nudge is off for this session: NUDGE_CONFIG_DIR is set to \(ConfigDir.url.path), \(problem). "
         + "It's only for Nudge's test harness; unset it to get Nudge prompts back."
-    writeHookOutput(["systemMessage": message])
+}
+
+func exitWithConfigDirWarning(_ problem: String) -> Never {
+    writeHookOutput(["systemMessage": configDirWarning(problem)])
     exit(0)
 }
 
@@ -129,9 +132,22 @@ let prompt = Prompt(
     subagentId: inputJSON["agent_id"] as? String
 )
 
+// Every way out below that isn't your answer goes through here. Nothing
+// printed lets the agent's own prompt take over, except after a pattern
+// match, where Claude wouldn't ask and the call would run unasked
+// (see noAnswerOutput).
+func exitWithoutAnswer(pattern: String?, systemMessage: String? = nil) -> Never {
+    if let output = noAnswerOutput(pattern: pattern, systemMessage: systemMessage) {
+        writeHookOutput(output)
+    }
+    exit(0)
+}
+
 guard let port = NudgeClient.locatePort() else {
-    if ConfigDir.isOverridden { exitWithConfigDirWarning("but no Nudge is running there") }
-    exit(0) // Nudge not available: fall back to the agent's own prompt.
+    if ConfigDir.isOverridden {
+        exitWithoutAnswer(pattern: matched, systemMessage: configDirWarning("but no Nudge is running there"))
+    }
+    exitWithoutAnswer(pattern: matched) // Nudge not available.
 }
 
 // MARK: - POST and wait
@@ -150,23 +166,23 @@ do {
     // Exiting closes the socket, which withdraws the prompt in the menu bar.
     // With no decision, the agent's own prompt takes over (a denial would
     // stop the call), and systemMessage tells you why it took a while.
-    writeHookOutput(["systemMessage": handBackMessage(agent: agent, waited: maxWait!)])
-    exit(0)
+    exitWithoutAnswer(pattern: matched, systemMessage: handBackMessage(agent: agent, waited: maxWait!))
 } catch NudgeClientError.unauthorized {
     // Token mismatch — surface to stderr so it shows up in Console.app and
     // the agent's hook log. Silent fallback would mean the user has no idea why
     // their popovers stopped working.
     fputs("nudge-hook: auth failed (token mismatch). Try restarting Nudge.\n", stderr)
-    exit(0)
+    exitWithoutAnswer(pattern: matched)
 } catch NudgeClientError.tokenMissing {
     fputs("nudge-hook: token file missing or invalid. Try restarting Nudge.\n", stderr)
-    exit(0)
+    exitWithoutAnswer(pattern: matched)
 } catch {
-    exit(0) // Anything else: fall back silently to the agent's own prompt.
+    exitWithoutAnswer(pattern: matched) // Anything else, like the app's 5-minute timeout.
 }
 
+// Handed back (cancel), e.g. you paused Nudge while it was asking.
 guard decision.decision == .allow || decision.decision == .deny else {
-    exit(0)
+    exitWithoutAnswer(pattern: matched)
 }
 
 // MARK: - Answer the agent

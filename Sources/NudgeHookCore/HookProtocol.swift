@@ -202,6 +202,19 @@ public func askInAgentUIOutput(pattern: String) -> [String: Any] {
     ]
 }
 
+/// What the hook prints when it ends without your answer: Nudge isn't
+/// running, the wait ran out, the token is wrong, or the prompt was handed
+/// back. With nothing printed the agent carries on with its own flow, which
+/// is right when it was about to ask anyway. A pattern match is different:
+/// Claude wouldn't have asked (that's what the pattern is for), so it would
+/// run the call unasked. Then answer "ask", and Claude asks in its own UI.
+/// Nil means print nothing.
+public func noAnswerOutput(pattern: String?, systemMessage: String? = nil) -> [String: Any]? {
+    var output: [String: Any] = pattern.map(askInAgentUIOutput(pattern:)) ?? [:]
+    if let systemMessage { output["systemMessage"] = systemMessage }
+    return output.isEmpty ? nil : output
+}
+
 /// Prints a hook answer (a decision, a systemMessage) to stdout, where the
 /// agent reads it.
 public func writeHookOutput(_ object: [String: Any]) {

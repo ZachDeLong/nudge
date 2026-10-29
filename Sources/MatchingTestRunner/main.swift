@@ -736,6 +736,26 @@ do {
     expect(out?["permissionDecisionReason"], "Nudge: this matches Bash(git push:*).", "protocol: hand-back names the pattern")
 }
 
+// No answer from Nudge (not running, timed out, handed back): a pattern match
+// still asks, or Claude would run the call unasked. Without one, print nothing.
+do {
+    let asked = noAnswerOutput(pattern: "Bash(git push:*)")
+    let out = asked?["hookSpecificOutput"] as? [String: String]
+    expect(out?["permissionDecision"], "ask", "protocol: no answer on a pattern match still asks")
+    expect(out?["permissionDecisionReason"], "Nudge: this matches Bash(git push:*).", "protocol: no-answer ask names the pattern")
+    expectNil(asked?["systemMessage"], "protocol: no-answer ask adds no message unless given one")
+
+    let both = noAnswerOutput(pattern: "Bash(rm:*)", systemMessage: "Nudge got no answer in 1 second, so Claude is asking here instead.")
+    expect((both?["hookSpecificOutput"] as? [String: String])?["permissionDecision"], "ask", "protocol: a timed-out pattern match still asks")
+    expect(both?["systemMessage"] as? String, "Nudge got no answer in 1 second, so Claude is asking here instead.",
+           "protocol: a timed-out pattern match keeps the hand-back message")
+
+    expectNil(noAnswerOutput(pattern: nil), "protocol: no answer and no pattern prints nothing")
+    let note = noAnswerOutput(pattern: nil, systemMessage: "note")
+    expect(note?["systemMessage"] as? String, "note", "protocol: no pattern keeps just the message")
+    expectNil(note?["hookSpecificOutput"], "protocol: no pattern, no decision")
+}
+
 // Wait bound: Codex shows no prompt of its own while the hook waits, so the
 // hook gives up after two minutes. Claude's dialog runs alongside, so no bound.
 expect(hookMaxWait(agent: .codex, environment: [:], harness: false), 120, "wait: Codex gives up after two minutes")

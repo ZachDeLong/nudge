@@ -1,5 +1,5 @@
 {
-  "description": "a leftover NUDGE_CONFIG_DIR whose Nudge is gone: the hook says so instead of silently turning Nudge off",
+  "description": "a leftover NUDGE_CONFIG_DIR whose Nudge is gone: the hook says so instead of silently turning Nudge off, and the matched pattern still asks in Claude",
   "patterns": [
     "Bash(git push:*)"
   ],
@@ -19,6 +19,11 @@
   "hookConfigDir": "stale",
   "expectPrompt": null,
   "expectStdout": {
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "ask",
+      "permissionDecisionReason": "Nudge: this matches Bash(git push:*)."
+    },
     "systemMessage": "Nudge is off for this session: NUDGE_CONFIG_DIR is set to {hookConfigDir}, but no Nudge is running there. It's only for Nudge's test harness; unset it to get Nudge prompts back."
   },
   "expectExit": 0
